@@ -162,14 +162,15 @@ model BankAccount {
   currency              String   @default("ETB") @db.Char(3)
   isActive              Boolean  @default(true) @map("is_active")
   minBuffer             Decimal  @default(0) @map("min_buffer") @db.Decimal(19, 4)
-  ownerApprovalRequired Boolean  @default(false) @map("owner_approval_required")
   // Balances. currentBalance is typed in by the Accountant (bank's actual figure).
   currentBalance        Decimal  @default(0) @map("current_balance") @db.Decimal(19, 4)
   // Sum of amounts locked by active payment requests (RESERVED/VERIFIED). Maintained by the app inside the
   // same transaction as the status change. SQL: CHECK (reserved_balance >= 0)
   reservedBalance       Decimal  @default(0) @map("reserved_balance") @db.Decimal(19, 4)
-  // SQL: GENERATED ALWAYS AS (current_balance - reserved_balance) STORED. Never written by the app.
+  // SQL: GENERATED ALWAYS AS (current_balance - reserved_balance - min_buffer) STORED. Never written by the app.
   availableBalance      Decimal  @default(dbgenerated("0")) @map("available_balance") @db.Decimal(19, 4)
+  // SQL: GENERATED ALWAYS AS (GREATEST(reserved_balance - current_balance, 0)) STORED. Above zero blocks new submissions.
+  shortfallAmount       Decimal  @default(dbgenerated("0")) @map("shortfall_amount") @db.Decimal(19, 4)
   balanceUpdatedAt      DateTime? @map("balance_updated_at") @db.Timestamptz(6)
   createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   bank      Bank                @relation(fields: [bankId], references: [id])
@@ -316,6 +317,15 @@ model PaymentRequest {
   verifiedAt           DateTime? @map("verified_at") @db.Timestamptz(6)
   authenticatedById    String?  @map("authenticated_by") @db.Uuid   // the Owner
   authenticatedAt      DateTime? @map("authenticated_at") @db.Timestamptz(6)
+  paymentMethod        PaymentMethod @default(TRANSFER) @map("payment_method")
+  chequeNo             String?  @map("cheque_no")
+  bankReference        String?  @map("bank_reference")
+  bankProcessedAt      DateTime? @map("bank_processed_at") @db.Timestamptz(6)
+  bankProcessedById    String?  @map("bank_processed_by") @db.Uuid
+  balanceCheckId       String?  @map("balance_check_id") @db.Uuid
+  paidAt               DateTime? @map("paid_at") @db.Timestamptz(6)
+  paidById             String?  @map("paid_by") @db.Uuid
+  reconciliationId     String?  @map("reconciliation_id") @db.Uuid
   currency             String   @default("ETB") @db.Char(3)
   priority             String   @default("NORMAL")
   invoiceRef           String?  @map("invoice_ref")
@@ -351,8 +361,18 @@ enum PaymentRequestStatus {
   RESERVED
   VERIFIED
   AUTHENTICATED
+  PAID
   REJECTED
+  CANCELLED
   @@map("payment_request_status")
+}
+
+enum PaymentMethod {
+  TRANSFER
+  CHEQUE
+  CASH
+  TELEBIRR
+  @@map("payment_method")
 }
 
 model PaymentInstallment {

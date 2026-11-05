@@ -13,5 +13,5 @@ describe("CSV export", () => {
     expect(out).toContain("'+1+1,'@SUM(A1)");
     expect(out).toContain(`'-cmd|' /C calc'!A0,ok`);
   });
-  it("writes dates in a standard form", () => { expect(toCsv([["d", "D"]], [{ d: new Date("2026-10-13T10:00:00Z") }])).toContain("2026-10-13T10:00:00.000Z"); });
+  it("writes dates in a standard form, in Addis Ababa time", () => { expect(toCsv([["d", "D"]], [{ d: new Date("2026-10-13T10:00:00Z") }])).toContain("2026-10-13T13:00:00+03:00"); });
 });

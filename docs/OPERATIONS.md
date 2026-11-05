@@ -14,6 +14,11 @@ One Linux server (2 CPU, 4 GB is plenty for this load), a domain name pointing a
 ## Upgrading
 `git pull` (or unzip the new version), then `docker compose --env-file .env.production up -d --build`. Migrations run automatically and only once each. The runner stops, changing nothing, if an already-applied migration file was edited. **Take a backup before every upgrade.**
 
+## Go-live: requests authenticated during testing
+Agreed decision: these become Paid at go-live. No migration does this, so it never happens by itself. After a backup, run it once as the owner role, naming the person responsible:
+`psql "$MIGRATION_DATABASE_URL" -c "SELECT mark_authenticated_paid_at_go_live('<user id>', 'Test data, marked Paid at go-live')"`
+It moves no money (they were debited when authenticated), it is written to the audit trail, and the status is final. Run it only once real payments have not started: afterwards every authenticated request is treated as paid.
+
 ## Backups (do this before go-live)
 `ops/backup.sh` writes a database dump and a copy of the uploaded invoices, with checksums, and removes copies older than 30 days. Run it from cron every night, as the owner of the backup folder:
 `0 2 * * * MIGRATION_DATABASE_URL=... BACKUP_DIR=/var/backups/abig STORAGE_DIR=/path/to/storage /path/to/ops/backup.sh`

@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { Flash } from "@/components";
 import { saveDraft } from "../../../actions";
-import { dstr, etb } from "@/lib/format";
+import { dstr, etb, PAYMENT_METHODS } from "@/lib/format";
 import { withUser } from "@/lib/db";
 import { requireAccess } from "@/lib/rbac";
 import { requireMe } from "@/lib/session";
@@ -39,6 +39,7 @@ export default async function EditRequest({ params, searchParams }: { params: Pr
           <label className="f">Pay from (debit account)<select name="account" required defaultValue={r.debit_account_id ?? ""}><option value="" disabled>Choose an account</option>{d.accounts.map((a: any) => <option key={a.id} value={a.id}>{a.account_label} · {a.bank_name} ••••{a.account_last4} — available {etb(a.available_balance)}</option>)}</select></label>
           <label className="f">Invoice reference<input name="invoice_ref" defaultValue={r.invoice_ref ?? ""} required /></label>
           <label className="f">Invoice date<input name="invoice_date" type="date" defaultValue={dstr(r.invoice_date)} required /></label>
+          <label className="f">Payment method<select name="payment_method" defaultValue={r.payment_method}>{Object.entries(PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
           <label className="f">Priority<select name="priority" defaultValue={r.priority}><option>LOW</option><option>NORMAL</option><option>HIGH</option><option>URGENT</option></select></label>
         </div>
         <h2>Installments</h2><p className="mute">Leave a row empty to leave it out. The total is the sum of the rows.</p>
