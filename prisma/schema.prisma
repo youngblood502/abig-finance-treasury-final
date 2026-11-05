@@ -1,0 +1,566 @@
+// Mirrors prisma/migrations up to 20261027000000_treasury_refactor. CHECK constraints, partial unique indexes,
+// generated columns, RLS, triggers and functions live in the SQL migrations (Prisma cannot express them);
+// the main ones are marked "SQL:" below.
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url      = env("MIGRATION_DATABASE_URL") // owner role; the running app uses DATABASE_URL (abig_app)
+}
+
+model Company {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code      String   @unique
+  name      String   @map("legal_name")           // mandatory (column name unchanged)
+  tinNumber String   @unique @map("tin_number")   // mandatory. SQL: CHECK (btrim(tin_number) <> '')
+  phone     String                                // mandatory. SQL: CHECK (btrim(phone) <> '')
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  memberships  CompanyMembership[]
+  groupGrants  GroupPermissionGrant[]
+  bankAccounts BankAccountAccess[]                // many-to-many with BankAccount via the junction
+  auditEvents  AuditEvent[]
+  companySuppliers CompanySupplier[]
+  paymentRequests  PaymentRequest[]
+  @@map("companies")
+}
+
+model User {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email         String   @unique
+  fullName      String   @map("full_name")
+  passwordHash  String?  @map("password_hash")
+  isSystemAdmin Boolean  @default(false) @map("is_system_admin")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  memberships   CompanyMembership[]
+  groupGrants   GroupPermissionGrant[]
+  grantsMade    BankAccountAccess[] @relation("grantedBy")
+  grantsRevoked BankAccountAccess[] @relation("revokedBy")
+  snapshots     BankBalanceSnapshot[]
+  auditEvents   AuditEvent[]
+  suppliersCreated      Supplier[]
+  bankDetailsCreated    SupplierBankDetail[] @relation("bdCreated")
+  bankDetailsVerified   SupplierBankDetail[] @relation("bdVerified")
+  companySuppliersAdded CompanySupplier[]
+  balanceUpdates        BankBalanceHistory[]
+  requestsCreated       PaymentRequest[] @relation("requestCreator")       // as Accountant
+  requestsVerified      PaymentRequest[] @relation("requestVerifier")      // as Finance Manager
+  requestsAuthenticated PaymentRequest[] @relation("requestAuthenticator") // as Owner
+  attachments           Attachment[]
+  approvalEvents        ApprovalEvent[]
+  adjustments           AdjustmentHistory[]
+  paymentsCreated       PaymentTransaction[]
+  ledgerEntries         CashLedgerEntry[]
+  reversalsMade         PaymentReversal[]
+  reservationsMade      CashReservation[]
+  useApprovalsGiven     AccountUseApproval[] @relation("approvedBy")
+  useApprovalsRevoked   AccountUseApproval[] @relation("revokedByApproval")
+  @@map("users")
+}
+
+model CompanyMembership {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId String    @map("company_id") @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  validFrom DateTime  @default(now()) @map("valid_from") @db.Timestamptz(6)
+  validTo   DateTime? @map("valid_to") @db.Timestamptz(6)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  company   Company   @relation(fields: [companyId], references: [id])
+  user      User      @relation(fields: [userId], references: [id])
+  roles     MembershipRole[] // replaces the old roles String[] column
+  // SQL: partial unique (company_id, user_id) WHERE revoked_at IS NULL (already exists)
+  @@index([userId])
+  @@map("company_memberships")
+}
+
+// ---------- RBAC ----------
+// Admin stays User.isSystemAdmin (global, not company-bound). The roles below are company-scoped.
+// Seed: ACCOUNTANT (maxCompanies 1), FINANCE_MANAGER (configurable), OWNER (null = unlimited).
+model Role {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code         String   @unique                    // ACCOUNTANT | FINANCE_MANAGER | OWNER | custom
+  name         String
+  description  String?
+  maxCompanies Int?     @map("max_companies")      // null = unlimited. SQL: CHECK (max_companies IS NULL OR max_companies >= 1)
+  isSystem     Boolean  @default(false) @map("is_system") // built-in roles cannot be deleted
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  permissions  RolePermission[]
+  memberships  MembershipRole[]
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code        String   @unique                     // e.g. payment_request:create, payment_request:verify
+  resource    String
+  action      String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  roles       RolePermission[]
+  @@unique([resource, action])
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String   @map("role_id") @db.Uuid
+  permissionId String   @map("permission_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  role         Role       @relation(fields: [roleId], references: [id])
+  permission   Permission @relation(fields: [permissionId], references: [id])
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+// A user's role(s) inside one company. Company-count limits (Role.maxCompanies) are enforced in SQL:
+// SQL: trigger on INSERT - count the user's distinct active memberships that hold this role; reject if > max_companies.
+model MembershipRole {
+  membershipId String   @map("membership_id") @db.Uuid
+  roleId       String   @map("role_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  membership   CompanyMembership @relation(fields: [membershipId], references: [id])
+  role         Role              @relation(fields: [roleId], references: [id])
+  @@id([membershipId, roleId])
+  @@index([roleId])
+  @@map("membership_roles")
+}
+
+model GroupPermissionGrant {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  permission String
+  companyId  String    @map("company_id") @db.Uuid
+  validFrom  DateTime  @default(now()) @map("valid_from") @db.Timestamptz(6)
+  validTo    DateTime? @map("valid_to") @db.Timestamptz(6)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  user       User      @relation(fields: [userId], references: [id])
+  company    Company   @relation(fields: [companyId], references: [id])
+  @@map("group_permission_grants")
+}
+
+model Bank {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String   @unique
+  code      String?  @unique // SWIFT/BIC or local bank code
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  accounts  BankAccount[]
+  @@map("banks")
+}
+
+model BankAccount {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bankId                String   @map("bank_id") @db.Uuid
+  accountLabel          String   @map("account_label")
+  accountLast4          String   @map("account_last4") @db.Char(4)
+  accountNumberEnc      Bytes?   @map("account_number_enc")
+  currency              String   @default("ETB") @db.Char(3)
+  isActive              Boolean  @default(true) @map("is_active")
+  minBuffer             Decimal  @default(0) @map("min_buffer") @db.Decimal(19, 4)
+  ownerApprovalRequired Boolean  @default(false) @map("owner_approval_required")
+  // Balances. currentBalance is typed in by the Accountant (bank's actual figure).
+  currentBalance        Decimal  @default(0) @map("current_balance") @db.Decimal(19, 4)
+  // Sum of amounts locked by active payment requests (RESERVED/VERIFIED). Maintained by the app inside the
+  // same transaction as the status change. SQL: CHECK (reserved_balance >= 0)
+  reservedBalance       Decimal  @default(0) @map("reserved_balance") @db.Decimal(19, 4)
+  // SQL: GENERATED ALWAYS AS (current_balance - reserved_balance) STORED. Never written by the app.
+  availableBalance      Decimal  @default(dbgenerated("0")) @map("available_balance") @db.Decimal(19, 4)
+  balanceUpdatedAt      DateTime? @map("balance_updated_at") @db.Timestamptz(6)
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  bank      Bank                @relation(fields: [bankId], references: [id])
+  companies BankAccountAccess[] // many-to-many with Company via the junction
+  paymentRequests PaymentRequest[]
+  snapshots BankBalanceSnapshot[]
+  ledgerEntries CashLedgerEntry[]
+  reservations  CashReservation[]
+  payments      PaymentTransaction[]
+  useApprovals  AccountUseApproval[]
+  balanceHistory  BankBalanceHistory[]
+  @@index([bankId])
+  @@map("company_bank_accounts")
+}
+
+// One row per balance update, written only by update_bank_balance() (SQL: append-only, no direct INSERT for the app role).
+model BankBalanceHistory {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId       String   @map("account_id") @db.Uuid
+  previousBalance Decimal  @map("previous_balance") @db.Decimal(19, 4)
+  newBalance      Decimal  @map("new_balance") @db.Decimal(19, 4) // SQL: CHECK (new_balance >= 0); never below reservedBalance
+  updatedById     String   @map("updated_by") @db.Uuid
+  updatedAt       DateTime @default(dbgenerated("clock_timestamp()")) @map("updated_at") @db.Timestamptz(6)
+  account         BankAccount @relation(fields: [accountId], references: [id])
+  updatedBy       User        @relation(fields: [updatedById], references: [id])
+  @@index([accountId, updatedAt(sort: Desc)])
+  @@map("bank_balance_history")
+}
+
+// Junction: one BankAccount <-> many Companies (and a Company has many accounts).
+// Ownership is now a row here (isOwner), not a column on BankAccount.
+// SQL: partial unique (account_id) WHERE is_owner AND revoked_at IS NULL  -> at most one active owner
+model BankAccountAccess {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId   String    @map("account_id") @db.Uuid
+  companyId   String    @map("company_id") @db.Uuid
+  isOwner     Boolean   @default(false) @map("is_owner")
+  permissions String[]  @default(["USE"])
+  validFrom   DateTime  @default(now()) @map("valid_from") @db.Timestamptz(6)
+  validTo     DateTime? @map("valid_to") @db.Timestamptz(6)
+  grantedById String    @map("granted_by") @db.Uuid
+  revokedAt   DateTime? @map("revoked_at") @db.Timestamptz(6)
+  revokedById String?   @map("revoked_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  account     BankAccount @relation(fields: [accountId], references: [id])
+  company     Company     @relation(fields: [companyId], references: [id])
+  grantedBy   User        @relation("grantedBy", fields: [grantedById], references: [id])
+  revokedBy   User?       @relation("revokedBy", fields: [revokedById], references: [id])
+  @@index([accountId])
+  @@map("company_bank_account_access")
+}
+
+model BankBalanceSnapshot {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId   String   @map("account_id") @db.Uuid
+  asOf        DateTime @map("as_of") @db.Timestamptz(6)
+  balance     Decimal  @db.Decimal(19, 4)
+  currency    String   @default("ETB") @db.Char(3)
+  status      String   @default("ACCEPTED")
+  enteredById String   @map("entered_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  account     BankAccount @relation(fields: [accountId], references: [id])
+  enteredBy   User        @relation(fields: [enteredById], references: [id])
+  @@unique([accountId, asOf])
+  @@map("bank_balance_snapshots")
+}
+
+model AuditEvent {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  occurredAt    DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  actorId       String   @map("actor_id") @db.Uuid
+  companyId     String?  @map("company_id") @db.Uuid
+  action        String
+  entityType    String   @map("entity_type")
+  entityId      String?  @map("entity_id") @db.Uuid
+  metadata      Json     @default("{}")
+  correlationId String   @default(dbgenerated("gen_random_uuid()")) @map("correlation_id") @db.Uuid
+  actor         User     @relation(fields: [actorId], references: [id])
+  company       Company? @relation(fields: [companyId], references: [id])
+  @@index([companyId, occurredAt(sort: Desc)])
+  @@map("audit_events")
+}
+
+model Supplier {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  legalName   String   @map("legal_name")
+  tin         String   @unique
+  isActive    Boolean  @default(true) @map("is_active")
+  createdById String   @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy   User     @relation(fields: [createdById], references: [id])
+  bankDetails SupplierBankDetail[]
+  companies   CompanySupplier[]
+  requests    PaymentRequest[]
+  @@map("suppliers")
+}
+
+model SupplierBankDetail {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  supplierId       String    @map("supplier_id") @db.Uuid
+  version          Int
+  bankName         String    @map("bank_name")
+  accountLast4     String    @map("account_last4") @db.Char(4)
+  accountNumberEnc Bytes?    @map("account_number_enc")
+  currency         String    @default("ETB") @db.Char(3)
+  status           String    @default("PENDING")
+  createdById      String    @map("created_by") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  verifiedById     String?   @map("verified_by") @db.Uuid
+  verifiedAt       DateTime? @map("verified_at") @db.Timestamptz(6)
+  rejectionReason  String?   @map("rejection_reason")
+  supplier   Supplier @relation(fields: [supplierId], references: [id])
+  createdBy  User     @relation("bdCreated", fields: [createdById], references: [id])
+  verifiedBy User?    @relation("bdVerified", fields: [verifiedById], references: [id])
+  requests   PaymentRequest[]
+  @@unique([supplierId, version])
+  @@map("supplier_bank_details")
+}
+
+model CompanySupplier {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId        String   @map("company_id") @db.Uuid
+  supplierId       String   @map("supplier_id") @db.Uuid
+  status           String   @default("ACTIVE")
+  paymentTermsDays Int      @default(30) @map("payment_terms_days")
+  createdById      String   @map("created_by") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  company   Company  @relation(fields: [companyId], references: [id])
+  supplier  Supplier @relation(fields: [supplierId], references: [id])
+  createdBy User     @relation(fields: [createdById], references: [id])
+  @@unique([companyId, supplierId])
+  @@map("company_suppliers")
+}
+
+model PaymentRequest {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  requestNo            String   @unique @default(dbgenerated("('PR-' || lpad(nextval('payment_request_seq')::text, 6, '0'))")) @map("request_no")
+  debtorCompanyId      String   @map("debtor_company_id") @db.Uuid
+  supplierId           String   @map("supplier_id") @db.Uuid
+  supplierBankDetailId String?  @map("supplier_bank_detail_id") @db.Uuid
+  debitAccountId       String?  @map("debit_account_id") @db.Uuid   // SQL: CHECK (status = 'DRAFT' OR debit_account_id IS NOT NULL)
+  createdById          String   @map("created_by") @db.Uuid         // the Accountant
+  verifiedById         String?  @map("verified_by") @db.Uuid        // the Finance Manager
+  verifiedAt           DateTime? @map("verified_at") @db.Timestamptz(6)
+  authenticatedById    String?  @map("authenticated_by") @db.Uuid   // the Owner
+  authenticatedAt      DateTime? @map("authenticated_at") @db.Timestamptz(6)
+  currency             String   @default("ETB") @db.Char(3)
+  priority             String   @default("NORMAL")
+  invoiceRef           String?  @map("invoice_ref")
+  invoiceDate          DateTime? @map("invoice_date") @db.Date
+  description          String?
+  amount               Decimal  @map("total_amount") @db.Decimal(19, 4) // SQL: CHECK (total_amount > 0); <= debit account availableBalance checked at reservation
+  status               PaymentRequestStatus @default(DRAFT) @map("workflow_state")
+  version              Int      @default(1)
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  debtorCompany Company  @relation(fields: [debtorCompanyId], references: [id])
+  supplier      Supplier @relation(fields: [supplierId], references: [id])
+  bankDetail    SupplierBankDetail? @relation(fields: [supplierBankDetailId], references: [id])
+  debitAccount  BankAccount? @relation(fields: [debitAccountId], references: [id])
+  createdBy     User     @relation("requestCreator", fields: [createdById], references: [id])
+  verifiedBy    User?    @relation("requestVerifier", fields: [verifiedById], references: [id])
+  authenticatedBy User?  @relation("requestAuthenticator", fields: [authenticatedById], references: [id])
+  installments  PaymentInstallment[]
+  attachments   Attachment[]
+  events        RequestEvent[]
+  approvalEvents ApprovalEvent[]
+  adjustments    AdjustmentHistory[]
+  outbox         NotificationOutbox[]
+  @@index([debtorCompanyId, status])
+  @@index([debitAccountId, status])
+  @@map("payment_requests")
+}
+
+// SQL: replaces the text CHECK on workflow_state (old values SUBMITTED/AUTHORIZED/RETURNED/CANCELLED must be mapped first).
+enum PaymentRequestStatus {
+  DRAFT
+  SCHEDULED
+  RESERVED
+  VERIFIED
+  AUTHENTICATED
+  REJECTED
+  @@map("payment_request_status")
+}
+
+model PaymentInstallment {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  requestId String   @map("request_id") @db.Uuid
+  seq       Int
+  dueDate   DateTime @map("due_date") @db.Date
+  amount    Decimal  @db.Decimal(19, 4)
+  currency  String   @default("ETB") @db.Char(3)
+  request   PaymentRequest @relation(fields: [requestId], references: [id])
+  reservations CashReservation[]
+  payments     PaymentTransaction[]
+  useApprovals AccountUseApproval[]
+  @@unique([requestId, seq])
+  @@map("payment_installments")
+}
+
+model Attachment {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  requestId    String   @map("request_id") @db.Uuid
+  kind         String
+  objectKey    String   @unique @map("object_key")
+  filename     String
+  mimeType     String   @map("mime_type")
+  sizeBytes    BigInt   @map("size_bytes")
+  sha256       String   @db.Char(64)
+  supersedesId String?  @map("supersedes_id") @db.Uuid
+  uploadedById String   @map("uploaded_by") @db.Uuid
+  uploadedAt   DateTime @default(now()) @map("uploaded_at") @db.Timestamptz(6)
+  request      PaymentRequest @relation(fields: [requestId], references: [id])
+  supersedes   Attachment?    @relation("replaces", fields: [supersedesId], references: [id])
+  replacedBy   Attachment[]   @relation("replaces")
+  uploadedBy   User           @relation(fields: [uploadedById], references: [id])
+  @@index([requestId])
+  @@map("attachments")
+}
+
+model RequestEvent {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  requestId  String   @map("request_id") @db.Uuid
+  fromState  String?  @map("from_state")
+  toState    String   @map("to_state")
+  actorId    String?  @map("actor_id") @db.Uuid
+  version    Int
+  occurredAt DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  request    PaymentRequest @relation(fields: [requestId], references: [id])
+  @@index([requestId, occurredAt])
+  @@map("request_events")
+}
+
+model ApprovalEvent {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  requestId      String   @map("request_id") @db.Uuid
+  requestVersion Int      @map("request_version")
+  stage          String
+  action         String
+  actorId        String   @map("actor_id") @db.Uuid
+  actorRole      String   @map("actor_role")
+  reason         String?
+  correlationId  String   @map("correlation_id") @db.Uuid
+  occurredAt     DateTime @default(dbgenerated("clock_timestamp()")) @map("occurred_at") @db.Timestamptz(6)
+  request        PaymentRequest @relation(fields: [requestId], references: [id])
+  actor          User           @relation(fields: [actorId], references: [id])
+  @@index([requestId, occurredAt])
+  @@map("approval_events")
+}
+
+model AdjustmentHistory {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  requestId      String   @map("request_id") @db.Uuid
+  entityType     String   @map("entity_type")
+  entityId       String   @map("entity_id") @db.Uuid
+  field          String
+  oldValue       String?  @map("old_value")
+  newValue       String?  @map("new_value")
+  reason         String
+  actorId        String   @map("actor_id") @db.Uuid
+  actorRole      String   @map("actor_role")
+  workflowStage  String   @map("workflow_stage")
+  requestVersion Int      @map("request_version")
+  correlationId  String   @map("correlation_id") @db.Uuid
+  occurredAt     DateTime @default(dbgenerated("clock_timestamp()")) @map("occurred_at") @db.Timestamptz(6)
+  request        PaymentRequest @relation(fields: [requestId], references: [id])
+  actor          User           @relation(fields: [actorId], references: [id])
+  @@index([requestId, occurredAt])
+  @@map("adjustment_history")
+}
+
+model NotificationOutbox {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventType   String    @map("event_type")
+  requestId   String    @map("request_id") @db.Uuid
+  payload     Json      @default("{}")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  availableAt DateTime  @default(now()) @map("available_at") @db.Timestamptz(6)
+  attempts    Int       @default(0)
+  deliveredAt DateTime? @map("delivered_at") @db.Timestamptz(6)
+  lastError   String?   @map("last_error")
+  deadAt      DateTime? @map("dead_at") @db.Timestamptz(6)
+  request     PaymentRequest @relation(fields: [requestId], references: [id])
+  @@map("notification_outbox")
+}
+
+model TreasurySettings {
+  id                Boolean @id @default(true)
+  staleWarnHours    Int     @default(24) @map("stale_warn_hours")
+  staleBlockHours   Int     @default(72) @map("stale_block_hours")
+  allowSplitFunding Boolean @default(false) @map("allow_split_funding")
+  @@map("treasury_settings")
+}
+
+model PaymentTransaction {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  installmentId String   @map("installment_id") @db.Uuid
+  accountId     String   @map("account_id") @db.Uuid
+  reservationId String?  @map("reservation_id") @db.Uuid
+  amount        Decimal  @db.Decimal(19, 4)
+  currency      String   @default("ETB") @db.Char(3)
+  paidAt        DateTime @map("paid_at") @db.Timestamptz(6)
+  reference     String?
+  createdById   String   @map("created_by") @db.Uuid
+  createdAt     DateTime @default(dbgenerated("clock_timestamp()")) @map("created_at") @db.Timestamptz(6)
+  installment   PaymentInstallment @relation(fields: [installmentId], references: [id])
+  account       BankAccount        @relation(fields: [accountId], references: [id])
+  reservation   CashReservation?   @relation(fields: [reservationId], references: [id])
+  createdBy     User               @relation(fields: [createdById], references: [id])
+  ledgerEntries CashLedgerEntry[]
+  reversal      PaymentReversal?
+  @@unique([accountId, reference])
+  @@index([installmentId])
+  @@map("payment_transactions")
+}
+
+model CashLedgerEntry {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId   String   @map("account_id") @db.Uuid
+  effectiveAt DateTime @map("effective_at") @db.Timestamptz(6)
+  amount      Decimal  @db.Decimal(19, 4)
+  currency    String   @default("ETB") @db.Char(3)
+  entryType   String   @map("entry_type")
+  paymentId   String?  @map("payment_id") @db.Uuid
+  reversalOf  String?  @unique @map("reversal_of") @db.Uuid
+  description String?
+  createdById String   @map("created_by") @db.Uuid
+  createdAt   DateTime @default(dbgenerated("clock_timestamp()")) @map("created_at") @db.Timestamptz(6)
+  account     BankAccount         @relation(fields: [accountId], references: [id])
+  payment     PaymentTransaction? @relation(fields: [paymentId], references: [id])
+  reverses    CashLedgerEntry?    @relation("reverses", fields: [reversalOf], references: [id])
+  reversedBy  CashLedgerEntry?    @relation("reverses")
+  createdBy   User                @relation(fields: [createdById], references: [id])
+  @@index([accountId, effectiveAt])
+  @@map("cash_ledger_entries")
+}
+
+model PaymentReversal {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  paymentId  String   @unique @map("payment_id") @db.Uuid
+  reason     String
+  reversedById String @map("reversed_by") @db.Uuid
+  createdAt  DateTime @default(dbgenerated("clock_timestamp()")) @map("created_at") @db.Timestamptz(6)
+  payment    PaymentTransaction @relation(fields: [paymentId], references: [id])
+  reversedBy User               @relation(fields: [reversedById], references: [id])
+  @@map("payment_reversals")
+}
+
+model CashReservation {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  installmentId  String    @map("installment_id") @db.Uuid
+  accountId      String    @map("account_id") @db.Uuid
+  amount         Decimal   @db.Decimal(19, 4)
+  consumedAmount Decimal   @default(0) @map("consumed_amount") @db.Decimal(19, 4)
+  currency       String    @default("ETB") @db.Char(3)
+  plannedDate    DateTime  @map("planned_date") @db.Date
+  status         String    @default("ACTIVE")
+  overrideReason String?   @map("override_reason")
+  createdById    String    @map("created_by") @db.Uuid
+  createdAt      DateTime  @default(dbgenerated("clock_timestamp()")) @map("created_at") @db.Timestamptz(6)
+  closedAt       DateTime? @map("closed_at") @db.Timestamptz(6)
+  closeReason    String?   @map("close_reason")
+  installment    PaymentInstallment @relation(fields: [installmentId], references: [id])
+  account        BankAccount        @relation(fields: [accountId], references: [id])
+  createdBy      User               @relation(fields: [createdById], references: [id])
+  payments       PaymentTransaction[]
+  @@map("cash_reservations")
+}
+
+model IdempotencyKey {
+  scope       String
+  key         String
+  requestHash String   @map("request_hash")
+  result      Json?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@id([scope, key])
+  @@map("idempotency_keys")
+}
+
+model AccountUseApproval {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId     String    @map("account_id") @db.Uuid
+  installmentId String    @map("installment_id") @db.Uuid
+  approvedById  String    @map("approved_by") @db.Uuid
+  approvedAt    DateTime  @default(dbgenerated("clock_timestamp()")) @map("approved_at") @db.Timestamptz(6)
+  revokedAt     DateTime? @map("revoked_at") @db.Timestamptz(6)
+  revokedById   String?   @map("revoked_by") @db.Uuid
+  revokeReason  String?   @map("revoke_reason")
+  account       BankAccount        @relation(fields: [accountId], references: [id])
+  installment   PaymentInstallment @relation(fields: [installmentId], references: [id])
+  approvedBy    User               @relation("approvedBy", fields: [approvedById], references: [id])
+  revokedBy     User?              @relation("revokedByApproval", fields: [revokedById], references: [id])
+  @@map("account_use_approvals")
+}
