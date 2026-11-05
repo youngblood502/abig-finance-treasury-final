@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { Flash } from "@/components";
-import { dstr, dtime, etb } from "@/lib/format";
+import { Flash, ShortfallChip } from "@/components";
+import { dstr, dtime, etb, addisDate, PAYMENT_METHODS, STATE_LABEL } from "@/lib/format";
 import { withUser } from "@/lib/db";
 import { requireAccess } from "@/lib/rbac";
 import { requireMe } from "@/lib/session";
@@ -11,7 +11,7 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 export default async function Reports({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams; const me = await requireMe(); requireAccess(me, "/reports");
   const tab = TABS.some(([k]) => k === sp.r) ? sp.r! : "pending";
-  const today = new Date().toISOString().slice(0, 10), from = DATE.test(sp.from ?? "") ? sp.from! : new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10), to = DATE.test(sp.to ?? "") ? sp.to! : today;
+  const today = addisDate(), from = DATE.test(sp.from ?? "") ? sp.from! : addisDate(new Date(Date.now() - 30 * 864e5)), to = DATE.test(sp.to ?? "") ? sp.to! : today;
   const q = (sp.q ?? "").trim() || null;
   const d = await withUser(me.id, async (tx) => {
     if (tab === "pending") return { rows: await pendingRows(tx) };
@@ -40,18 +40,18 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
       {tab === "payments" && (<>
         <form className="card form" action="/reports"><input type="hidden" name="r" value="payments" /><label className="f">From<input type="date" name="from" defaultValue={from} /></label><label className="f">To<input type="date" name="to" defaultValue={to} /></label><button>Show</button>
           <a className="btn sec" href={`/reports/export/payments?from=${from}&to=${to}`}>Download CSV</a></form>
-        <h2>Payments made: {etb(sum(d.rows))} <span className="mute">({d.rows.length})</span></h2>
-        <div className="card scroll"><table><thead><tr><th>Paid</th><th>Request</th><th>Company</th><th>Supplier</th><th>Debit account</th><th className="n">Amount</th><th>Verified by</th><th>Authenticated by</th></tr></thead>
-          <tbody>{d.rows.map((r: any) => <tr key={r.request_no}><td>{dtime(r.authenticated_at)}</td><td>{r.request_no}</td><td>{r.company_name}</td><td>{r.supplier_name}</td><td>{r.account_label ?? "—"}</td><td className="n">{etb(r.amount)}</td><td>{r.verified_by}</td><td>{r.authenticated_by}</td></tr>)}
-            {d.rows.length === 0 && <tr><td colSpan={8} className="mute">No payments in this period.</td></tr>}</tbody></table></div>
+        <h2>Authenticated payments: {etb(sum(d.rows))} <span className="mute">({d.rows.length})</span></h2>
+        <div className="card scroll"><table><thead><tr><th>Authenticated</th><th>Status</th><th>Method</th><th>Request</th><th>Company</th><th>Supplier</th><th>Debit account</th><th className="n">Amount</th><th>Verified by</th><th>Authenticated by</th></tr></thead>
+          <tbody>{d.rows.map((r: any) => <tr key={r.request_no}><td>{dtime(r.authenticated_at)}</td><td>{STATE_LABEL[r.workflow_state]}</td><td>{PAYMENT_METHODS[r.payment_method]}</td><td>{r.request_no}</td><td>{r.company_name}</td><td>{r.supplier_name}</td><td>{r.account_label ?? "—"}</td><td className="n">{etb(r.amount)}</td><td>{r.verified_by}</td><td>{r.authenticated_by}</td></tr>)}
+            {d.rows.length === 0 && <tr><td colSpan={10} className="mute">No payments in this period.</td></tr>}</tbody></table></div>
       </>)}
 
       {tab === "cash" && (<>
         <h2>Cash and commitments</h2>
         <div className="card scroll"><table><thead><tr><th>Account</th><th className="n">Current</th><th className="n">Reserved</th><th className="n">Available</th><th className="n">Falls due in 30 days</th><th>Balance updated</th></tr></thead>
-          <tbody>{d.rows.map((a: any) => <tr key={a.account_label}><td><b>{a.account_label}</b><div className="mute">{a.bank_name} ••••{a.account_last4}</div></td><td className="n">{etb(a.current_balance)}</td><td className="n">{etb(a.reserved_balance)}</td><td className="n"><b>{etb(a.available_balance)}</b></td><td className="n">{etb(a.due_30_days)}</td><td>{a.balance_updated_at ? dtime(a.balance_updated_at) : "No balance entered"}</td></tr>)}
+          <tbody>{d.rows.map((a: any) => <tr key={a.account_label}><td><b>{a.account_label}</b><div className="mute">{a.bank_name} ••••{a.account_last4}</div><ShortfallChip amount={a.shortfall_amount} /></td><td className="n">{etb(a.current_balance)}</td><td className="n">{etb(a.reserved_balance)}</td><td className="n"><b>{etb(a.available_balance)}</b></td><td className="n">{etb(a.due_30_days)}</td><td>{a.balance_updated_at ? dtime(a.balance_updated_at) : "No balance entered"}</td></tr>)}
             <tr><td><b>Total</b></td><td className="n"><b>{etb(sum(d.rows, "current_balance"))}</b></td><td className="n"><b>{etb(sum(d.rows, "reserved_balance"))}</b></td><td className="n"><b>{etb(sum(d.rows, "available_balance"))}</b></td><td className="n"><b>{etb(sum(d.rows, "due_30_days"))}</b></td><td></td></tr></tbody></table></div>
-        <p className="mute">Funds for these commitments are already reserved, so Available is what can still be committed to new requests.</p>
+        <p className="mute">Funds for these commitments are already reserved, so Available (after each account's minimum buffer) is what can still be committed to new requests.</p>
       </>)}
 
       {tab === "audit" && (<>

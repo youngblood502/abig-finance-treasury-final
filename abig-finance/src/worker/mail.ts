@@ -1,9 +1,10 @@
 import nodemailer from "nodemailer";
 import type { Pool } from "pg";
+import { etb } from "../lib/format";
 
 export interface Mail { to: string; subject: string; text: string }
 export type Sender = (m: Mail) => Promise<void>;
-export interface OutboxEvent { id: string; event_type: string; request_id: string; payload: { request_no?: string; reason?: string; overdue_amount?: number | string } }
+export interface OutboxEvent { id: string; event_type: string; request_id: string | null; payload: { request_no?: string; reason?: string; overdue_amount?: number | string; account_label?: string; balance?: number | string; reserved?: number | string; shortfall_amount?: number | string } }
 
 /** SMTP_URL, for example smtps://user:password@smtp.example.com:465. Without it, mails are printed to the console. */
 export function makeSender(): Sender {
@@ -24,13 +25,15 @@ const SUBJECTS: Record<string, (e: OutboxEvent) => string> = {
   REQUEST_ADJUSTED: (e) => `${e.payload.request_no} was adjusted`,
   REQUEST_CANCELLED: (e) => `${e.payload.request_no} was cancelled`,
   REQUEST_OVERDUE: (e) => `${e.payload.request_no} has overdue payments`,
+  ACCOUNT_SHORTFALL: (e) => `${e.payload.account_label} is in shortfall by ${etb(e.payload.shortfall_amount)}`,
 };
 export function compose(e: OutboxEvent, appUrl: string): { subject: string; text: string } {
   const subject = (SUBJECTS[e.event_type] ?? (() => `Update on ${e.payload.request_no}`))(e);
   const lines = ["Hello,", "", subject + "."];
   if (e.payload.reason) lines.push("", `Reason: ${e.payload.reason}`);
-  if (e.payload.overdue_amount) lines.push("", `Overdue amount: ETB ${Number(e.payload.overdue_amount).toLocaleString("en-US")}`);
-  lines.push("", `Open it: ${appUrl.replace(/\/$/, "")}/requests/${e.request_id}`, "", "ABIG Finance");
+  if (e.payload.overdue_amount) lines.push("", `Overdue amount: ${etb(e.payload.overdue_amount)}`);
+  if (e.event_type === "ACCOUNT_SHORTFALL") lines.push("", `Balance: ${etb(e.payload.balance)}`, `Reserved: ${etb(e.payload.reserved)}`, "New submissions on this account are blocked until the shortfall is cleared.");
+  lines.push("", `Open it: ${appUrl.replace(/\/$/, "")}${e.request_id ? `/requests/${e.request_id}` : "/accounts"}`, "", "ABIG Finance");
   return { subject, text: lines.join("\n") };
 }
 

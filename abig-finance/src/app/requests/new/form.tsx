@@ -1,10 +1,10 @@
 "use client";
 import { useState } from "react";
 import { createRequest } from "../../actions";
-import { etb } from "@/lib/format";
+import { etb, PAYMENT_METHODS } from "@/lib/format";
 
 type Target = { company_id: string; supplier_id: string; company: string; supplier: string; bank_ok: boolean };
-type Account = { company_id: string; id: string; account_label: string; bank_name: string; account_last4: string; available_balance: number };
+type Account = { company_id: string; id: string; account_label: string; bank_name: string; account_last4: string; available_balance: number; shortfall_amount: number };
 
 export default function NewRequestForm({ targets, accounts }: { targets: Target[]; accounts: Account[] }) {
   const [target, setTarget] = useState(() => { const t = targets.find((x) => x.bank_ok) ?? targets[0]; return `${t.company_id}|${t.supplier_id}`; });
@@ -25,10 +25,11 @@ export default function NewRequestForm({ targets, accounts }: { targets: Target[
         <label className="f">Pay from (debit account)
           <select name="account" required value={accountId} onChange={(e) => setAccountId(e.target.value)}>
             <option value="" disabled>{options.length ? "Choose an account" : "No account is linked to this company"}</option>
-            {options.map((a) => <option key={a.id} value={a.id}>{a.account_label} · {a.bank_name} ••••{a.account_last4} — available {etb(a.available_balance)}</option>)}
+            {options.map((a) => <option key={a.id} value={a.id}>{a.account_label} · {a.bank_name} ••••{a.account_last4} — {a.shortfall_amount > 0 ? `in shortfall by ${etb(a.shortfall_amount)}, submissions blocked` : `available ${etb(a.available_balance)}`}</option>)}
           </select></label>
         <label className="f">Invoice reference<input name="invoice_ref" required /></label>
         <label className="f">Invoice date<input name="invoice_date" type="date" required /></label>
+        <label className="f">Payment method<select name="payment_method" defaultValue="TRANSFER">{Object.entries(PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
         <label className="f">Priority<select name="priority" defaultValue="NORMAL"><option>LOW</option><option>NORMAL</option><option>HIGH</option><option>URGENT</option></select></label>
       </div>
       <h2>Installments</h2><p className="mute">Fill in one row for each payment. The total is the sum of the rows, and all of it is reserved when you submit.</p>

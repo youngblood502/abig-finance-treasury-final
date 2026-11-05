@@ -30,15 +30,19 @@ BEGIN
   PERFORM set_config('app.user_id', meron::text, true); v := wf_submit(r);
   PERFORM set_config('app.user_id', dawit::text, true); v := wf_verify(r, v);
   PERFORM set_config('app.user_id', kebede::text, true); PERFORM wf_authorize(r, v);
-  -- Waiting for verification: 640,000 reserved on Awash.
-  r := pg_temp.demo(asku, hawassa, bd_h, meron, awash, ARRAY[640000], ARRAY[5], 'NORMAL', 'HP-2026-0102');
+  -- Waiting for verification: 600,000 reserved on Awash (770,000 less the 100,000 minimum buffer leaves 670,000 available).
+  r := pg_temp.demo(asku, hawassa, bd_h, meron, awash, ARRAY[600000], ARRAY[5], 'NORMAL', 'HP-2026-0102');
   PERFORM set_config('app.user_id', meron::text, true); PERFORM wf_submit(r);
+  -- Cancelled by its creator: its funds were released.
+  r := pg_temp.demo(asku, hawassa, bd_h, meron, awash, ARRAY[50000], ARRAY[12], 'NORMAL', 'HP-2026-0105');
+  PERFORM set_config('app.user_id', meron::text, true); v := wf_submit(r);
+  PERFORM wf_cancel(r, v, 'Ordered by mistake');
   -- Verified, waiting for the Owner: Berbero pays 2,300,000 from the shared BEES CBE account.
   r := pg_temp.demo(berbero, ethio, bd_e, nardos, cbe, ARRAY[2300000], ARRAY[7], 'HIGH', 'EC-7781');
   PERFORM set_config('app.user_id', nardos::text, true); v := wf_submit(r);
   PERFORM set_config('app.user_id', fikru::text, true); PERFORM wf_verify(r, v);
   -- Rejected by the Owner: its funds were released.
-  r := pg_temp.demo(asku, hawassa, bd_h, meron, cbe, ARRAY[900000, 1000000], ARRAY[-4, 14], 'URGENT', 'HP-2026-0104');
+  r := pg_temp.demo(asku, hawassa, bd_h, meron, cbe, ARRAY[800000, 800000], ARRAY[-4, 14], 'URGENT', 'HP-2026-0104');
   PERFORM set_config('app.user_id', meron::text, true); v := wf_submit(r);
   PERFORM set_config('app.user_id', dawit::text, true); v := wf_verify(r, v);
   PERFORM set_config('app.user_id', kebede::text, true); PERFORM wf_reject(r, v, 'Supplier delivery not confirmed');

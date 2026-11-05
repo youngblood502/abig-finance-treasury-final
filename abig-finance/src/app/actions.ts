@@ -62,9 +62,9 @@ export async function createRequest(f: FormData) {
     id = await dbl(withUser(uid, async (tx) => {
       const bank = (await tx.q<{ id: string }>("SELECT id FROM supplier_bank_details WHERE supplier_id = $1 AND status = 'VERIFIED'", [supplierId]))[0];
       const rid = (await tx.q<{ id: string }>(
-        `INSERT INTO payment_requests (debtor_company_id, supplier_id, supplier_bank_detail_id, debit_account_id, created_by, invoice_ref, invoice_date, description, priority, total_amount)
-         VALUES ($1,$2,$3,$4,$5,$6,$7::date,$8,$9,$10) RETURNING id`,
-        [companyId, supplierId, bank?.id ?? null, str(f, "account") || null, uid, str(f, "invoice_ref") || null, str(f, "invoice_date") || null, str(f, "description") || null, str(f, "priority") || "NORMAL", total || 0]))[0].id;
+        `INSERT INTO payment_requests (debtor_company_id, supplier_id, supplier_bank_detail_id, debit_account_id, created_by, invoice_ref, invoice_date, description, priority, total_amount, payment_method)
+         VALUES ($1,$2,$3,$4,$5,$6,$7::date,$8,$9,$10,$11::payment_method) RETURNING id`,
+        [companyId, supplierId, bank?.id ?? null, str(f, "account") || null, uid, str(f, "invoice_ref") || null, str(f, "invoice_date") || null, str(f, "description") || null, str(f, "priority") || "NORMAL", total || 0, str(f, "payment_method") || "TRANSFER"]))[0].id;
       for (const [i, x] of inst.entries()) await tx.q("INSERT INTO payment_installments (request_id, seq, due_date, amount) VALUES ($1,$2,$3::date,$4)", [rid, i + 1, x.d, x.a]);
       if (file instanceof File && file.size > 0) await saveAttachment(tx, uid, rid, file, "INVOICE");
       return rid;
@@ -104,6 +104,11 @@ export async function updateBalance(f: FormData) {
   return act("/accounts", "Balance updated.", guard(["bank_balance:update"], (uid) => t.updateBankBalance(uid, { accountId: str(f, "account"), balance: num(f, "balance") })));
 }
 
+export async function recordExecution(f: FormData) {
+  const id = str(f, "id");
+  return act(`/requests/${id}`, "Payment details saved.", guard(["payment_request:create"], (uid) => t.recordExecution(uid, { requestId: id, chequeNo: str(f, "cheque_no"), bankReference: str(f, "bank_reference") })));
+}
+
 // ---------- Suppliers ----------
 export async function addSupplier(f: FormData) {
   return act("/suppliers", "Supplier added. Add bank details next; a Verifier must verify them before any payment request.", guard(["supplier:manage"], (uid) => dbl(withUser(uid, async (tx) => {
@@ -140,8 +145,8 @@ export async function saveDraft(f: FormData) {
       if (!cur) throw new WorkflowError(404, "Request not found.");
       const supplierId = str(f, "supplier");
       const bank = (await tx.q<{ id: string }>("SELECT id FROM supplier_bank_details WHERE supplier_id = $1 AND status = 'VERIFIED'", [supplierId]))[0];
-      const n = await tx.q("UPDATE payment_requests SET supplier_id = $2, supplier_bank_detail_id = $3, invoice_ref = $4, invoice_date = $5::date, description = $6, priority = $7, total_amount = $8, debit_account_id = $9 WHERE id = $1 RETURNING id",
-        [id, supplierId, bank?.id ?? null, str(f, "invoice_ref") || null, str(f, "invoice_date") || null, str(f, "description") || null, str(f, "priority") || "NORMAL", inst.reduce((s, x) => s + x.a, 0) || 1, str(f, "account") || null]);
+      const n = await tx.q("UPDATE payment_requests SET supplier_id = $2, supplier_bank_detail_id = $3, invoice_ref = $4, invoice_date = $5::date, description = $6, priority = $7, total_amount = $8, debit_account_id = $9, payment_method = $10::payment_method WHERE id = $1 RETURNING id",
+        [id, supplierId, bank?.id ?? null, str(f, "invoice_ref") || null, str(f, "invoice_date") || null, str(f, "description") || null, str(f, "priority") || "NORMAL", inst.reduce((s, x) => s + x.a, 0) || 1, str(f, "account") || null, str(f, "payment_method") || "TRANSFER"]);
       if (!n.length) throw new WorkflowError(403, "This request can no longer be edited by you.");
       await tx.q("DELETE FROM payment_installments WHERE request_id = $1", [id]);
       for (const [i, x] of inst.entries()) await tx.q("INSERT INTO payment_installments (request_id, seq, due_date, amount) VALUES ($1,$2,$3::date,$4)", [id, i + 1, x.d, x.a]);
@@ -166,10 +171,10 @@ export async function updateSupplier(f: FormData) {
 // ---------- Account administration (account owner) ----------
 export async function registerAccount(f: FormData) {
   return act("/accounts", "Account registered. Enter its current balance before it is used.", guard(["bank_account:manage"], (uid) => dbl(withUser(uid, (tx) =>
-    tx.q("SELECT register_bank_account($1,$2,$3,$4,NULL,$5,$6)", [str(f, "owner"), str(f, "bank"), str(f, "label"), str(f, "last4"), Number(str(f, "buffer") || 0), str(f, "approval") === "on"])))));
+    tx.q("SELECT register_bank_account($1,$2,$3,$4,NULL,$5)", [str(f, "owner"), str(f, "bank"), str(f, "label"), str(f, "last4"), Number(str(f, "buffer") || 0)])))));
 }
 export async function setAccountPolicy(f: FormData) {
-  return act("/accounts", "Account policy saved.", guard(["bank_account:manage"], (uid) => dbl(withUser(uid, (tx) => tx.q("SELECT set_account_policy($1,$2,$3)", [str(f, "account"), Number(str(f, "buffer") || 0), str(f, "approval") === "on"])))));
+  return act("/accounts", "Account policy saved.", guard(["bank_account:manage"], (uid) => dbl(withUser(uid, (tx) => tx.q("SELECT set_account_policy($1,$2)", [str(f, "account"), Number(str(f, "buffer") || 0)])))));
 }
 export async function grantAccess(f: FormData) {
   const perms = ["USE", ...(str(f, "snapshot") === "on" ? ["RECORD_SNAPSHOT"] : [])];

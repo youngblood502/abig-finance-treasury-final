@@ -18,7 +18,7 @@ describe("concurrent money movements", () => {
       await b.query("BEGIN"); await b.query("SELECT set_config('app.user_id',$1,true)", [user.meron]);
       const second = b.query("SELECT wf_submit($1)", [r2]).then(() => "ok", (e: Error) => e.message);                                            // waits for the lock
       await new Promise((r) => setTimeout(r, 300)); await a.query("COMMIT");
-      expect(await second).toMatch(/more than the available balance \(ETB 350,000.00\)/);
+      expect(await second).toMatch(/more than the available balance \(ETB 250,000.00\)/);
       await b.query("ROLLBACK");
       expect(Number((await rows(owner, "SELECT reserved_balance r FROM company_bank_accounts WHERE id=$1", [AWASH]))[0].r)).toBe(800000);
     } finally { await a.end(); await b.end(); }

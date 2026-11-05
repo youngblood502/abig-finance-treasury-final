@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Flash, PayChip, StateChip } from "@/components";
-import { adjustRequest, workflowAction } from "../../actions";
-import { dstr, dtime, etb } from "@/lib/format";
+import { Flash, StateChip } from "@/components";
+import { adjustRequest, recordExecution, workflowAction } from "../../actions";
+import { dstr, dtime, etb, PAYMENT_METHODS } from "@/lib/format";
 import { withUser } from "@/lib/db";
 import { requireAccess } from "@/lib/rbac";
-import { currentUserId, requireMe } from "@/lib/session";
+import { currentUserId, hasPermission, requireMe } from "@/lib/session";
 
 const ACTION_LABEL: Record<string, string> = { SUBMIT: "Submitted", VERIFY: "Verified", AUTHORIZE: "Authenticated (account debited)", RETURN: "Returned", REJECT: "Rejected", CANCEL: "Cancelled", ADJUST: "Adjusted", INVALIDATE: "Earlier approvals cancelled" };
 
@@ -26,7 +26,7 @@ export default async function RequestDetail({ params, searchParams }: { params: 
   requireAccess(me, "/requests");
   const d = await withUser(uid, async (tx) => {
     const r = (await tx.q<any>(
-      `SELECT r.*, c.legal_name AS company, s.legal_name AS supplier, s.tin, b.bank_name, b.account_last4, b.status AS bank_status, u.full_name AS creator_name, request_payment_status(r.id) AS pay_status,
+      `SELECT r.*, c.legal_name AS company, s.legal_name AS supplier, s.tin, b.bank_name, b.account_last4, b.status AS bank_status, u.full_name AS creator_name,
               da.account_label AS debit_label, dk.name AS debit_bank, da.account_last4 AS debit_last4, da.available_balance AS debit_available
        FROM payment_requests r JOIN companies c ON c.id = r.debtor_company_id JOIN suppliers s ON s.id = r.supplier_id
        LEFT JOIN supplier_bank_details b ON b.id = r.supplier_bank_detail_id LEFT JOIN users u ON u.id = r.created_by
@@ -47,11 +47,12 @@ export default async function RequestDetail({ params, searchParams }: { params: 
   const holds = r.workflow_state === "RESERVED" || r.workflow_state === "VERIFIED";
   const cancellable = mine && ["DRAFT", "SCHEDULED", "RESERVED", "VERIFIED"].includes(r.workflow_state);
   const canAdjust = Boolean(d.actionable);
+  const canRecord = r.workflow_state === "AUTHENTICATED" && hasPermission(me, "payment_request:create", r.debtor_company_id);
   const who = (u: any) => u.full_name ?? "Someone at the company";
   return (
     <>
       <p className="mute"><Link href="/requests">Payment requests</Link> / {r.request_no}</p>
-      <div className="row"><h1>{r.request_no} — {r.supplier}</h1><div><StateChip state={r.workflow_state} /><PayChip status={r.pay_status} /></div></div>
+      <div className="row"><h1>{r.request_no} — {r.supplier}</h1><div><StateChip state={r.workflow_state} /></div></div>
       <p className="sub">{r.company} · entered by {r.creator_name ?? "—"} · version {r.version}</p>
       <Flash sp={sp} />
 
@@ -62,6 +63,10 @@ export default async function RequestDetail({ params, searchParams }: { params: 
           <div><span className="mute">Supplier</span><br />{r.supplier} <span className="mute">TIN {r.tin}</span></div>
           <div><span className="mute">Debit account</span><br />{r.debit_label ? `${r.debit_label} · ${r.debit_bank} ••••${r.debit_last4}` : "—"} {holds && <span className="chip">funds reserved</span>}</div>
           <div><span className="mute">Pays to</span><br />{r.bank_name ? `${r.bank_name} ••••${r.account_last4}` : "—"} {r.bank_status && r.bank_status !== "VERIFIED" && <span className="chip b">not verified</span>}</div>
+          <div><span className="mute">Payment method</span><br />{PAYMENT_METHODS[r.payment_method] ?? r.payment_method}</div>
+          {r.cheque_no && <div><span className="mute">Cheque number</span><br />{r.cheque_no}</div>}
+          {r.bank_reference && <div><span className="mute">Bank reference</span><br />{r.bank_reference}</div>}
+          {r.paid_at && <div><span className="mute">Paid</span><br />{dtime(r.paid_at)}</div>}
           <div><span className="mute">Priority</span><br />{r.priority}</div>
           {r.description && <div><span className="mute">Notes</span><br />{r.description}</div>}
         </div>
@@ -77,7 +82,12 @@ export default async function RequestDetail({ params, searchParams }: { params: 
         {d.actionable === "VERIFICATION" && <div style={{ display: "grid", gap: 10 }}><Do id={id} version={r.version} action="verify" label="Verify" /><Do id={id} version={r.version} action="return" label="Return for correction" ask /></div>}
         {d.actionable === "AUTHORIZATION" && <div style={{ display: "grid", gap: 10 }}><Do id={id} version={r.version} action="authorize" label="Authenticate (debit the account)" /><Do id={id} version={r.version} action="return" label="Return for correction" ask /><Do id={id} version={r.version} action="reject" label="Reject" ask danger /></div>}
         {cancellable && <div style={{ marginTop: 10 }}><Do id={id} version={r.version} action="cancel" label="Cancel my request" ask danger /></div>}
-        {!editable && !d.actionable && !cancellable && <p className="mute">Nothing for you to do on this request right now.</p>}
+        {!editable && !d.actionable && !cancellable && !canRecord && <p className="mute">Nothing for you to do on this request right now.</p>}
+        {canRecord && <form action={recordExecution} className="form"><input type="hidden" name="id" value={id} />
+          {r.payment_method === "CHEQUE" && <label className="f">Cheque number (optional)<input name="cheque_no" maxLength={64} defaultValue={r.cheque_no ?? ""} /></label>}
+          <label className="f">Bank reference (optional)<input name="bank_reference" maxLength={128} defaultValue={r.bank_reference ?? ""} /></label>
+          <button className="sec">Save payment details</button></form>}
+        {r.workflow_state === "AUTHENTICATED" && <p className="mute">The account has been debited. This payment stays Authenticated until reconciliation finds it on the bank statement. It can no longer be cancelled.</p>}
         {mine && r.workflow_state === "RESERVED" && <p className="mute">The funds are reserved. It is waiting for a Finance Manager to verify. You cannot approve your own request. Cancelling releases the funds.</p>}
       </div>
 
