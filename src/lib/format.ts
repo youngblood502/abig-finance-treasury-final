@@ -19,3 +19,9 @@ export const STATE_LABEL: Record<string, string> = {
   AUTHENTICATED: "Authenticated, not yet paid", PAID: "Paid", REJECTED: "Rejected", CANCELLED: "Cancelled",
 };
 export const PAYMENT_METHODS: Record<string, string> = { TRANSFER: "Transfer", CHEQUE: "Cheque", CASH: "Cash", TELEBIRR: "Telebirr" };
+/** The methods each kind of account can pay with. The database enforces the same rule. */
+export const METHODS_FOR_KIND: Record<string, string[]> = { BANK: ["TRANSFER", "CHEQUE"], WALLET: ["TELEBIRR"], CASH: ["CASH"] };
+export const ACCOUNT_KINDS: Record<string, string> = { BANK: "Bank account", WALLET: "Telebirr wallet", CASH: "Cash" };
+/** Where an account's money is: its bank and last four digits, its wallet phone, or plain cash. */
+export const accountPlace = (a: { account_kind?: string; bank_name?: string | null; account_last4?: string | null; wallet_phone?: string | null }) =>
+  a.account_kind === "CASH" ? "Cash" : a.account_kind === "WALLET" ? `Telebirr ${a.wallet_phone}` : `${a.bank_name} ••••${a.account_last4}`;

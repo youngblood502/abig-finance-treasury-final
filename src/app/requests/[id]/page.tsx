@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Flash, StateChip } from "@/components";
 import { adjustRequest, recordExecution, workflowAction } from "../../actions";
-import { dstr, dtime, etb, PAYMENT_METHODS } from "@/lib/format";
+import { accountPlace, dstr, dtime, etb, PAYMENT_METHODS } from "@/lib/format";
+import { maskId, revealIdNumber } from "@/lib/payees";
 import { withUser } from "@/lib/db";
 import { requireAccess } from "@/lib/rbac";
 import { currentUserId, hasPermission, requireMe } from "@/lib/session";
@@ -26,14 +27,17 @@ export default async function RequestDetail({ params, searchParams }: { params: 
   requireAccess(me, "/requests");
   const d = await withUser(uid, async (tx) => {
     const r = (await tx.q<any>(
-      `SELECT r.*, c.legal_name AS company, s.legal_name AS supplier, s.tin, b.bank_name, b.account_last4, b.status AS bank_status, u.full_name AS creator_name,
-              da.account_label AS debit_label, dk.name AS debit_bank, da.account_last4 AS debit_last4, da.available_balance AS debit_available
-       FROM payment_requests r JOIN companies c ON c.id = r.debtor_company_id JOIN suppliers s ON s.id = r.supplier_id
+      `SELECT r.*, c.legal_name AS company, COALESCE(s.legal_name, p.full_name) AS payee, s.tin, b.bank_name, b.account_last4, b.status AS bank_status, u.full_name AS creator_name,
+              p.phone AS person_phone, p.id_last4, pd.kind AS person_kind, pd.bank_name AS person_bank, pd.account_last4 AS person_last4, pd.telebirr_phone, pd.status AS person_detail_status,
+              da.account_label AS debit_label, da.account_kind::text AS account_kind, da.wallet_phone, dk.name AS debit_bank, da.account_last4 AS debit_last4, da.available_balance AS debit_available
+       FROM payment_requests r JOIN companies c ON c.id = r.debtor_company_id LEFT JOIN suppliers s ON s.id = r.supplier_id LEFT JOIN person_payees p ON p.id = r.person_payee_id
+       LEFT JOIN person_payment_details pd ON pd.id = r.person_payment_detail_id
        LEFT JOIN supplier_bank_details b ON b.id = r.supplier_bank_detail_id LEFT JOIN users u ON u.id = r.created_by
        LEFT JOIN company_bank_accounts da ON da.id = r.debit_account_id LEFT JOIN banks dk ON dk.id = da.bank_id WHERE r.id = $1`, [id]))[0];
     if (!r) return null;
+    const idEnc = r.person_payee_id ? (await tx.q<{ v: string | null }>("SELECT reveal_person_id($1) AS v", [id]))[0].v : null;   // logged; empty if this person may not see it
     return {
-      r,
+      r, fullId: idEnc ? revealIdNumber(idEnc) : null,
       inst: await tx.q<any>("SELECT seq, due_date, amount FROM payment_installments WHERE request_id = $1 ORDER BY seq", [id]),
       approvals: await tx.q<any>("SELECT a.*, u.full_name FROM approval_events a LEFT JOIN users u ON u.id = a.actor_id WHERE a.request_id = $1 ORDER BY a.occurred_at", [id]),
       adjustments: await tx.q<any>("SELECT h.*, u.full_name FROM adjustment_history h LEFT JOIN users u ON u.id = h.actor_id WHERE h.request_id = $1 ORDER BY h.occurred_at", [id]),
@@ -52,17 +56,18 @@ export default async function RequestDetail({ params, searchParams }: { params: 
   return (
     <>
       <p className="mute"><Link href="/requests">Payment requests</Link> / {r.request_no}</p>
-      <div className="row"><h1>{r.request_no} — {r.supplier}</h1><div><StateChip state={r.workflow_state} /></div></div>
+      <div className="row"><h1>{r.request_no} — {r.payee}</h1><div><StateChip state={r.workflow_state} /></div></div>
       <p className="sub">{r.company} · entered by {r.creator_name ?? "—"} · version {r.version}</p>
       <Flash sp={sp} />
 
       <div className="card">
         <div className="form">
           <div><span className="mute">Total</span><br /><b>{etb(r.total_amount)}</b></div>
-          <div><span className="mute">Invoice</span><br />{r.invoice_ref ?? "—"} · {dstr(r.invoice_date) || "—"}</div>
-          <div><span className="mute">Supplier</span><br />{r.supplier} <span className="mute">TIN {r.tin}</span></div>
-          <div><span className="mute">Debit account</span><br />{r.debit_label ? `${r.debit_label} · ${r.debit_bank} ••••${r.debit_last4}` : "—"} {holds && <span className="chip">funds reserved</span>}</div>
-          <div><span className="mute">Pays to</span><br />{r.bank_name ? `${r.bank_name} ••••${r.account_last4}` : "—"} {r.bank_status && r.bank_status !== "VERIFIED" && <span className="chip b">not verified</span>}</div>
+          <div><span className="mute">Invoice</span><br />{r.invoice_ref ?? "—"} · {dstr(r.invoice_date) || "—"} {d.files.length === 0 && <span className="chip w">No document</span>}</div>
+          {r.supplier_id ? <div><span className="mute">Supplier</span><br />{r.payee} <span className="mute">TIN {r.tin}</span></div>
+            : <div><span className="mute">Person</span><br />{r.payee} <span className="mute">{r.person_phone}</span><br /><span className="mute">ID {d.fullId ?? maskId(r.id_last4)}</span></div>}
+          <div><span className="mute">Debit account</span><br />{r.debit_label ? `${r.debit_label} · ${accountPlace({ account_kind: r.account_kind, bank_name: r.debit_bank, account_last4: r.debit_last4, wallet_phone: r.wallet_phone })}` : "—"} {holds && <span className="chip">funds reserved</span>}</div>
+          <div><span className="mute">Pays to</span><br />{r.person_kind === "TELEBIRR" ? `Telebirr ${r.telebirr_phone}` : r.person_kind === "BANK" ? `${r.person_bank} ••••${r.person_last4}` : r.bank_name ? `${r.bank_name} ••••${r.account_last4}` : "—"} {(r.bank_status ?? r.person_detail_status ?? "VERIFIED") !== "VERIFIED" && <span className="chip b">not verified</span>}</div>
           <div><span className="mute">Payment method</span><br />{PAYMENT_METHODS[r.payment_method] ?? r.payment_method}</div>
           {r.cheque_no && <div><span className="mute">Cheque number</span><br />{r.cheque_no}</div>}
           {r.bank_reference && <div><span className="mute">Bank reference</span><br />{r.bank_reference}</div>}

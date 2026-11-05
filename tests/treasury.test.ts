@@ -59,7 +59,7 @@ describe("reserving funds when a request is submitted", () => {
   it("requires a debit account the company is linked to", async () => {
     await as(user.meron, async (c) => {
       const none = await draft(c, 10, { account: null });
-      expect(await fails(c, "SELECT wf_submit($1)", [none])).toMatch(/choose the bank account/);
+      expect(await fails(c, "SELECT wf_submit($1)", [none])).toMatch(/choose the account/);
       await actAs(c, user.meron);
       expect(await fails(c, "UPDATE payment_requests SET debit_account_id=$2 WHERE id=$1", [none, "b0000000-0000-4000-8000-0000000000ff"])).toMatch(/not available to this company/);
       await c.query("UPDATE payment_requests SET debit_account_id=$2 WHERE id=$1", [none, CBE]);         // ASKU may use the shared BEES account

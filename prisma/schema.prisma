@@ -155,9 +155,11 @@ model Bank {
 
 model BankAccount {
   id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  bankId                String   @map("bank_id") @db.Uuid
+  accountKind           AccountKind @default(BANK) @map("account_kind")
+  walletPhone           String?  @map("wallet_phone")
+  bankId                String?  @map("bank_id") @db.Uuid
   accountLabel          String   @map("account_label")
-  accountLast4          String   @map("account_last4") @db.Char(4)
+  accountLast4          String?  @map("account_last4") @db.Char(4)
   accountNumberEnc      Bytes?   @map("account_number_enc")
   currency              String   @default("ETB") @db.Char(3)
   isActive              Boolean  @default(true) @map("is_active")
@@ -173,7 +175,7 @@ model BankAccount {
   shortfallAmount       Decimal  @default(dbgenerated("0")) @map("shortfall_amount") @db.Decimal(19, 4)
   balanceUpdatedAt      DateTime? @map("balance_updated_at") @db.Timestamptz(6)
   createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  bank      Bank                @relation(fields: [bankId], references: [id])
+  bank      Bank?               @relation(fields: [bankId], references: [id])
   companies BankAccountAccess[] // many-to-many with Company via the junction
   paymentRequests PaymentRequest[]
   snapshots BankBalanceSnapshot[]
@@ -309,7 +311,10 @@ model PaymentRequest {
   id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   requestNo            String   @unique @default(dbgenerated("('PR-' || lpad(nextval('payment_request_seq')::text, 6, '0'))")) @map("request_no")
   debtorCompanyId      String   @map("debtor_company_id") @db.Uuid
-  supplierId           String   @map("supplier_id") @db.Uuid
+  payeeType            PayeeType @default(SUPPLIER) @map("payee_type")
+  supplierId           String?  @map("supplier_id") @db.Uuid
+  personPayeeId        String?  @map("person_payee_id") @db.Uuid
+  personPaymentDetailId String? @map("person_payment_detail_id") @db.Uuid
   supplierBankDetailId String?  @map("supplier_bank_detail_id") @db.Uuid
   debitAccountId       String?  @map("debit_account_id") @db.Uuid   // SQL: CHECK (status = 'DRAFT' OR debit_account_id IS NOT NULL)
   createdById          String   @map("created_by") @db.Uuid         // the Accountant
@@ -337,7 +342,7 @@ model PaymentRequest {
   createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
   debtorCompany Company  @relation(fields: [debtorCompanyId], references: [id])
-  supplier      Supplier @relation(fields: [supplierId], references: [id])
+  supplier      Supplier? @relation(fields: [supplierId], references: [id])
   bankDetail    SupplierBankDetail? @relation(fields: [supplierBankDetailId], references: [id])
   debitAccount  BankAccount? @relation(fields: [debitAccountId], references: [id])
   createdBy     User     @relation("requestCreator", fields: [createdById], references: [id])
@@ -367,6 +372,20 @@ enum PaymentRequestStatus {
   @@map("payment_request_status")
 }
 
+enum PayeeType {
+  SUPPLIER
+  PERSON
+  @@map("payee_type")
+}
+
+enum AccountKind {
+  BANK
+  WALLET
+  CASH
+  @@map("account_kind")
+}
+
+// SQL only, see migration 20261106000000: person_payees and person_payment_details (raw SQL, reached through database functions).
 enum PaymentMethod {
   TRANSFER
   CHEQUE

@@ -23,7 +23,7 @@ DECLARE
   meron constant uuid := 'a0000000-0000-4000-8000-000000000002'; dawit constant uuid := 'a0000000-0000-4000-8000-000000000010'; kebede constant uuid := 'a0000000-0000-4000-8000-000000000011';
   nardos constant uuid := 'a0000000-0000-4000-8000-000000000013'; fikru constant uuid := 'a0000000-0000-4000-8000-000000000014'; hana constant uuid := 'a0000000-0000-4000-8000-000000000004';
   awash constant uuid := 'b0000000-0000-4000-8000-000000000002'; cbe constant uuid := 'b0000000-0000-4000-8000-000000000001';
-  r uuid; v int;
+  r uuid; v int; w uuid; k uuid;
 BEGIN
   -- Authenticated: the 380,000 has already been debited from the Awash account (current 770,000).
   r := pg_temp.demo(asku, hawassa, bd_h, meron, awash, ARRAY[380000], ARRAY[9], 'NORMAL', 'HP-2026-0103');
@@ -50,6 +50,12 @@ BEGIN
   r := pg_temp.demo(berbero, ethio, bd_e, nardos, cbe, ARRAY[120000], ARRAY[3], 'NORMAL', 'EC-7790');
   PERFORM set_config('app.user_id', nardos::text, true); v := wf_submit(r);
   PERFORM set_config('app.user_id', fikru::text, true); PERFORM wf_return(r, v, 'The invoice number does not match the attached file');
+  -- A Telebirr wallet and a petty cash account for ASKU, with their first balances.
+  PERFORM set_config('app.user_id', kebede::text, true);
+  w := register_wallet_account(asku, 'ASKU Telebirr', '0911 000 111', 0);
+  k := register_cash_account(asku, 'ASKU petty cash', 0);
+  PERFORM set_config('app.user_id', meron::text, true);
+  PERFORM update_bank_balance(w, 45000); PERFORM update_bank_balance(k, 20000);
   -- A plain draft.
   PERFORM pg_temp.demo(asku, hawassa, bd_h, meron, awash, ARRAY[250000], ARRAY[20], 'NORMAL', 'HP-2026-0101');
 END $$;
