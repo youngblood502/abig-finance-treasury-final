@@ -3,10 +3,10 @@
 #   docker compose --env-file .env.production up -d --build
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     environment: { POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}", POSTGRES_DB: abig }
-    volumes: [dbdata:/var/lib/postgresql/data]
+    volumes: [dbdata:/var/lib/postgresql]   # from version 18 the image keeps its data in a versioned folder under this path
     healthcheck: { test: ["CMD-SHELL", "pg_isready -U postgres -d abig"], interval: 5s, timeout: 3s, retries: 20 }
     # Not published to the host: only the other services can reach it.
 

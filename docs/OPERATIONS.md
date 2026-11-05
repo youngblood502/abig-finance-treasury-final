@@ -1,6 +1,7 @@
 # Operations guide
 
 ## What you need
+ABIG Finance runs on PostgreSQL 18 everywhere: production, development and tests. `pg_dump` and `pg_restore` must be version 18 too.
 One Linux server (2 CPU, 4 GB is plenty for this load), a domain name pointing at it, an email account for notifications (SMTP), and Docker with the compose plugin. The database, website, worker and HTTPS proxy all run from `docker-compose.yml`.
 
 ## First deployment
@@ -12,6 +13,7 @@ One Linux server (2 CPU, 4 GB is plenty for this load), a domain name pointing a
 5. In Administration: add the companies, add people, give roles. Then, as the right people, enter suppliers, bank accounts and the first bank balances. Do not load demo data in production.
 
 ## Upgrading
+**A server still on PostgreSQL 16.** PostgreSQL cannot open an older data folder, and the Compose volume now mounts at a different path, so changing the image alone will not work. Take a backup with `ops/backup.sh`, stop the stack, create a new empty volume, start the `db` service on version 18, restore the dump as described under Backups, then start the rest.
 `git pull` (or unzip the new version), then `docker compose --env-file .env.production up -d --build`. Migrations run automatically and only once each. The runner stops, changing nothing, if an already-applied migration file was edited. **Take a backup before every upgrade.**
 
 ## Go-live: requests authenticated during testing

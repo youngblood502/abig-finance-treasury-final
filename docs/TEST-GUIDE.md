@@ -1,7 +1,7 @@
 # Testing guide: functionality, workflow and UI/UX
 
 ## Set up a test copy (about 10 minutes)
-1. Install Node.js 20+ and PostgreSQL 14+. Unzip the project and run `npm install`.
+1. Install Node.js 20+ and PostgreSQL 18. Unzip the project and run `npm install`.
 2. Create an empty database called `abig`, then copy `.env.example` to `.env` and fill in the postgres password.
 3. `npm run migrate` (builds all tables and gives the app roles their passwords).
 4. `npm run db:seed` then `npm run db:demo` (demo companies, people and requests).
