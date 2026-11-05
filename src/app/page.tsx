@@ -17,15 +17,19 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       `SELECT a.id, a.account_label, a.account_kind::text AS account_kind, a.wallet_phone, b.name AS bank_name, a.account_last4, a.is_active, a.current_balance, a.reserved_balance, a.available_balance, a.shortfall_amount, a.balance_updated_at,
               COALESCE((SELECT array_agg(c.legal_name ORDER BY g.is_owner DESC, c.legal_name) FROM company_bank_account_access g JOIN companies c ON c.id = g.company_id WHERE g.account_id = a.id AND g.revoked_at IS NULL), '{}') AS companies
          FROM company_bank_accounts a LEFT JOIN banks b ON b.id = a.bank_id ORDER BY a.account_label`) : [];
-    return { actionable, byState, accounts };
+    const weeks = canAccess(me, "/treasury") ? await tx.q<any>("SELECT * FROM account_week_status()") : [];
+    return { actionable, byState, accounts, weeks };
   });
   const st = (s: string) => d.byState.find((x) => x.s === s);
   const active = d.accounts.filter((a: any) => a.is_active);
   const sum = (k: string) => active.reduce((t: number, a: any) => t + Number(a[k]), 0);
+  const noOpening = d.weeks.filter((w: any) => !w.has_opening), overdue = d.weeks.reduce((n: number, w: any) => n + w.overdue_count, 0);
   const current = sum("current_balance"), reserved = sum("reserved_balance"), available = sum("available_balance");
   return (
     <>
       <h1>Dashboard</h1><p className="sub">What needs attention, and where the cash is.</p><Flash sp={sp} />
+      {noOpening.length > 0 && <div className="card"><b>No opening balance yet this week</b><div>{noOpening.map((w: any) => <Link className="chip w" href={`/treasury/${w.account_id}`} key={w.account_id}>{w.account_label}</Link>)}</div></div>}
+      {overdue > 0 && <div className="card"><Link href="/treasury" className="chip b">{overdue} payment{overdue === 1 ? "" : "s"} outstanding for 14 days or more</Link></div>}
       {showAccounts && (<>
         <h2>Cash across your accounts</h2>
         <div className="figs">

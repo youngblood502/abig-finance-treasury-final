@@ -19,6 +19,17 @@ Agreed decision: these become Paid at go-live. No migration does this, so it nev
 `psql "$MIGRATION_DATABASE_URL" -c "SELECT mark_authenticated_paid_at_go_live('<user id>', 'Test data, marked Paid at go-live')"`
 It moves no money (they were debited when authenticated), it is written to the audit trail, and the status is final. Run it only once real payments have not started: afterwards every authenticated request is treated as paid.
 
+## The weekly cycle
+
+Run the go-live step above before the first Monday opening. From then on each account runs in weeks, Monday to Sunday, in Addis Ababa time.
+
+- **Opening.** The Accountant enters each account's figure on Monday. Payments carried over are listed for ticking. Balance checks are refused until the week has its opening.
+- **Balance checks.** System balance = bank figure minus the authenticated payments not ticked as processed. Implied deposit = new system balance minus the previous one. Transfers and Telebirr are ticked by default, cheques are not, and cash is never listed. A negative implied deposit, one above the account's threshold (ETB 500,000 unless changed under Manage this account), and a balance that changed between weeks are flagged on the log.
+- **Reconciliation.** The Accountant of the company that owns the account enters the statement's closing balance and deposits, matches payments, and adds charges and other items. For a cash account the count replaces the statement. Tick "a balance check already picked this up" on an item that an earlier check has already taken into the balance.
+- **Two figures must be settled before it can be sent.** Balance difference = closing balance minus unmatched payments minus the system balance at the end of the week, minus the items that adjust the balance: it must be zero. Deposit difference = statement deposits minus implied deposits, plus the items a check already picked up: zero, or explained in writing. Every unmatched payment needs a reason to carry over.
+- **Review and lock.** A Finance Manager of the owner company reviews, then locks or returns it. Nobody who worked on it can lock it. Matched payments become Paid at the lock, not at the match, because Paid is final and the review must be able to change the answer. Items that adjust the balance are posted at the lock, unless a bank figure entered in a later week already includes them.
+- **After a lock.** The week never changes; a correction is a line in the next week. Anything that happens after the lock belongs to the next week, even if the calendar week has not ended. Weeks of one account lock in order. Unmatched payments stay outstanding and are flagged once 14 days have passed since authentication.
+
 ## Encryption key
 People's ID numbers are encrypted with `APP_ENCRYPTION_KEY`, and duplicates are found with a hash built from the same key. Set the key before the first person is entered. Keep a copy somewhere safe, apart from the backups: without it, encrypted ID numbers cannot be read, and changing it makes existing ones unreadable and stops duplicates being found.
 

@@ -14,6 +14,29 @@ WITH checks AS (
     WHERE EXISTS (SELECT 1 FROM bank_balance_history h WHERE h.account_id = a.id) AND a.current_balance <> (SELECT h.new_balance FROM bank_balance_history h WHERE h.account_id = a.id ORDER BY h.updated_at DESC, h.id DESC LIMIT 1)
   UNION ALL SELECT 'bank account without exactly one owner company', count(*) FROM company_bank_accounts a
     WHERE (SELECT count(*) FROM company_bank_account_access g WHERE g.account_id = a.id AND g.is_owner AND g.revoked_at IS NULL) <> 1
+  -- Balance log and weeks.
+  UNION ALL SELECT 'balance check whose system balance is not the bank figure minus the outstanding payments', count(*) FROM bank_balance_history h
+    WHERE h.entry_kind IN ('OPENING','CHECK') AND h.week_id IS NOT NULL AND h.new_balance <> h.bank_figure - h.outstanding_total
+  UNION ALL SELECT 'balance check whose implied deposit is not the change in system balance', count(*) FROM bank_balance_history h
+    WHERE h.entry_kind = 'CHECK' AND h.week_id IS NOT NULL AND h.implied_deposit IS DISTINCT FROM h.new_balance - h.previous_balance
+  UNION ALL SELECT 'balance log entry from after the weekly cycle began without a week', count(*) FROM bank_balance_history h
+    WHERE h.week_id IS NULL AND EXISTS (SELECT 1 FROM bank_balance_history x WHERE x.account_id = h.account_id AND x.week_id IS NOT NULL AND x.updated_at < h.updated_at)
+  UNION ALL SELECT 'week with more than one opening balance, or an opening entry from another week', count(*) FROM treasury_weeks w
+    WHERE (SELECT count(*) FROM bank_balance_history h WHERE h.week_id = w.id AND h.entry_kind = 'OPENING') > 1
+       OR (w.opening_entry_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM bank_balance_history h WHERE h.id = w.opening_entry_id AND h.week_id = w.id AND h.entry_kind = 'OPENING'))
+  UNION ALL SELECT 'locked week with a difference left unexplained, or locked by its preparer', count(*) FROM treasury_weeks w
+    WHERE w.status = 'LOCKED' AND (w.balance_difference <> 0 OR w.locked_by = w.prepared_by OR (w.deposit_difference <> 0 AND btrim(coalesce(w.deposit_explanation, '')) = ''))
+  UNION ALL SELECT 'locked week with a later week locked before an earlier one', count(*) FROM treasury_weeks w JOIN treasury_weeks e ON e.account_id = w.account_id AND e.week_start < w.week_start AND e.opening_entry_id IS NOT NULL
+    WHERE w.status = 'LOCKED' AND (e.status <> 'LOCKED' OR e.locked_at > w.locked_at)
+  UNION ALL SELECT 'paid payment without a matched line in a locked week', count(*) FROM payment_requests r
+    WHERE r.workflow_state = 'PAID' AND NOT EXISTS (SELECT 1 FROM reconciliation_lines l JOIN treasury_weeks w ON w.id = l.week_id WHERE l.request_id = r.id AND l.kind = 'PAYMENT' AND l.voided_at IS NULL AND w.status = 'LOCKED' AND w.id = r.reconciliation_id)
+      AND NOT EXISTS (SELECT 1 FROM audit_events e WHERE e.entity_id = r.id AND e.action = 'PAYMENT_MARKED_PAID_AT_GO_LIVE')
+  UNION ALL SELECT 'matched line in a locked week whose payment is not paid', count(*) FROM reconciliation_lines l JOIN treasury_weeks w ON w.id = l.week_id JOIN payment_requests r ON r.id = l.request_id
+    WHERE w.status = 'LOCKED' AND l.kind = 'PAYMENT' AND l.voided_at IS NULL AND (r.workflow_state <> 'PAID' OR r.reconciliation_id IS DISTINCT FROM w.id)
+  UNION ALL SELECT 'matched or carried line that disagrees with its payment''s amount or company', count(*) FROM reconciliation_lines l JOIN payment_requests r ON r.id = l.request_id
+    WHERE l.amount <> r.total_amount OR l.company_id <> r.debtor_company_id OR l.account_id <> r.debit_account_id
+  UNION ALL SELECT 'payment still outstanding in a locked week with no carry-over reason', count(*) FROM treasury_weeks w JOIN bank_balance_history h ON h.week_id = w.id AND h.entry_kind = 'PAYMENT' JOIN payment_requests r ON r.id = h.request_id
+    WHERE w.status = 'LOCKED' AND r.workflow_state = 'AUTHENTICATED' AND NOT EXISTS (SELECT 1 FROM reconciliation_lines l WHERE l.request_id = r.id AND l.week_id = w.id AND l.kind = 'CARRY' AND l.voided_at IS NULL)
   -- Workflow.
   UNION ALL SELECT 'authenticated request not debited exactly once', count(*) FROM payment_requests r
     WHERE r.workflow_state IN ('AUTHENTICATED','PAID') AND r.authenticated_at IS NOT NULL AND r.debit_account_id IS NOT NULL
@@ -51,6 +74,7 @@ WITH checks AS (
      WHERE r.max_companies IS NOT NULL GROUP BY cm.user_id, mr.role_id, r.max_companies HAVING count(DISTINCT cm.company_id) > r.max_companies) x
   UNION ALL SELECT 'role holding a permission it may never hold', count(*) FROM role_permissions rp JOIN roles r ON r.id = rp.role_id JOIN permissions p ON p.id = rp.permission_id
     WHERE p.code IN ('user:manage','company:manage') OR (r.code = 'ACCOUNTANT' AND p.code IN ('payment_request:verify','payment_request:authenticate','payment_request:reject','approval:view'))
-       OR (r.code = 'FINANCE_MANAGER' AND p.code = 'payment_request:authenticate')
+       OR (r.code = 'FINANCE_MANAGER' AND p.code IN ('payment_request:authenticate','reconciliation:prepare'))
+       OR (r.code = 'ACCOUNTANT' AND p.code = 'reconciliation:lock')
 )
 SELECT name, violations FROM checks ORDER BY violations DESC, name;

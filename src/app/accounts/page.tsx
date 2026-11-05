@@ -1,6 +1,7 @@
 import { Flash, ShortfallChip } from "@/components";
-import { grantAccess, registerAccount, revokeAccess, setAccountPolicy, updateBalance } from "../actions";
-import { ACCOUNT_KINDS, accountPlace, dtime, etb } from "@/lib/format";
+import Link from "next/link";
+import { grantAccess, registerAccount, revokeAccess, setAccountPolicy, setDepositAlert } from "../actions";
+import { ACCOUNT_KINDS, accountPlace, ANOMALIES, dtime, ENTRY_KINDS, etb } from "@/lib/format";
 import { withUser } from "@/lib/db";
 import { requireAccess } from "@/lib/rbac";
 import { currentUserId, requireMe, hasPermission } from "@/lib/session";
@@ -11,7 +12,7 @@ export default async function Accounts({ searchParams }: { searchParams: Promise
   const d = await withUser(uid, async (tx) => {
     // Who may update or manage an account is decided in the database (app_can_snapshot / app_can_manage_access).
     const accounts = await tx.q<any>(
-      `SELECT a.id, a.account_label, a.account_kind::text AS account_kind, a.wallet_phone, b.name AS bank_name, a.account_last4, a.min_buffer, a.is_active,
+      `SELECT a.id, a.account_label, a.account_kind::text AS account_kind, a.wallet_phone, b.name AS bank_name, a.account_last4, a.min_buffer, a.large_deposit_threshold, a.is_active,
               a.current_balance, a.reserved_balance, a.available_balance, a.shortfall_amount, a.balance_updated_at,
               o.id AS owner_company_id, o.legal_name AS owner,
               app_can_snapshot(a.id) AS can_update, app_can_manage_access(a.id) AS can_manage
@@ -54,15 +55,11 @@ export default async function Accounts({ searchParams }: { searchParams: Promise
           <div className="mute">{a.balance_updated_at ? `Balance last updated ${dtime(a.balance_updated_at)}` : "No balance has been entered yet"}</div>
           <div style={{ marginTop: 6 }}>{a.users.map((u: any) => <span className="chip" key={u.id}>{u.name}{u.is_owner ? " (owner)" : ""} can use{u.permissions.includes("RECORD_SNAPSHOT") ? " and update the balance" : ""}</span>)}
             <ShortfallChip amount={a.shortfall_amount} />{!a.is_active && <span className="chip b">Inactive</span>}</div>
-          {a.can_update && (
-            <form action={updateBalance} className="form" style={{ marginTop: 10 }}><input type="hidden" name="account" value={a.id} />
-              <label className="f">{a.account_kind === "CASH" ? "Cash counted now (ETB)" : a.account_kind === "WALLET" ? "Total amount now in the wallet (ETB)" : "Total amount now in the bank (ETB)"}<input name="balance" type="number" step="0.01" min="0" required placeholder={String(Number(a.current_balance))} /></label>
-              <button>Update balance</button></form>)}
-          {a.can_update && <p className="mute">Enter the overall amount in the account, not a single transaction. A figure below the reserved {etb(a.reserved_balance)} is accepted: the account then shows a shortfall, the Finance Manager is told, and new submissions on it are blocked.</p>}
+          {a.can_update && <p style={{ marginTop: 10 }}><Link href={`/treasury/${a.id}`}>Enter a balance check</Link></p>}
           <details style={{ marginTop: 10 }}><summary>Balance history</summary>
             {a.history.length === 0 ? <p className="mute">No balance updates yet.</p> : (
-              <div className="scroll"><table><thead><tr><th>When</th><th className="n">Previous</th><th className="n">New</th><th>Reason</th><th>By</th></tr></thead>
-                <tbody>{a.history.map((h: any) => <tr key={h.id}><td>{dtime(h.updated_at)}</td><td className="n">{etb(h.previous_balance)}</td><td className="n">{etb(h.new_balance)}</td><td>{h.request_no ? `Payment ${h.request_no}` : "Bank balance entered"}</td><td>{h.updated_by_name}</td></tr>)}</tbody></table></div>)}
+              <div className="scroll"><table><thead><tr><th>When</th><th className="n">Previous</th><th className="n">New</th><th>Reason</th><th className="n">Implied deposit</th><th>By</th></tr></thead>
+                <tbody>{a.history.map((h: any) => <tr key={h.id}><td>{dtime(h.updated_at)}</td><td className="n">{etb(h.previous_balance)}</td><td className="n">{etb(h.new_balance)}</td><td>{h.request_no ? `Payment ${h.request_no}` : ENTRY_KINDS[h.entry_kind]}{h.anomalies.map((x: string) => <span className="chip w" key={x}>{ANOMALIES[x]}</span>)}</td><td className="n">{h.implied_deposit === null ? "" : etb(h.implied_deposit)}</td><td>{h.updated_by_name}</td></tr>)}</tbody></table></div>)}
             {a.history.length === 10 && <p className="mute">The 10 most recent updates are shown.</p>}
           </details>
           {a.can_manage && (
@@ -70,6 +67,9 @@ export default async function Accounts({ searchParams }: { searchParams: Promise
               <form action={setAccountPolicy} className="form" style={{ marginTop: 8 }}><input type="hidden" name="account" value={a.id} />
                 <label className="f">Minimum buffer to keep (ETB)<input name="buffer" type="number" min="0" step="0.01" defaultValue={Number(a.min_buffer)} /></label>
                 <button>Save policy</button></form>
+              <form action={setDepositAlert} className="form" style={{ marginTop: 8 }}><input type="hidden" name="account" value={a.id} />
+                <label className="f">Flag an implied deposit above (ETB)<input name="threshold" type="number" min="0.01" step="0.01" defaultValue={Number(a.large_deposit_threshold)} /></label>
+                <button>Save</button></form>
               <h3 style={{ fontSize: 14 }}>Companies that share it</h3>
               {a.users.filter((u: any) => !u.is_owner).map((u: any) => <div key={u.id} className="inline"><span className="chip">{u.name}{u.permissions.includes("RECORD_SNAPSHOT") ? " (can also update the balance)" : ""}</span><form action={revokeAccess}><input type="hidden" name="id" value={u.id} /><button className="sec">Withdraw</button></form></div>)}
               <form action={grantAccess} className="form" style={{ marginTop: 8 }}><input type="hidden" name="account" value={a.id} />

@@ -111,8 +111,43 @@ export async function adjustRequest(f: FormData) {
 
 // ---------- Treasury ----------
 // ---------- Accounts ----------
-export async function updateBalance(f: FormData) {
-  return act("/accounts", "Balance updated.", guard(["bank_balance:update"], (uid) => t.updateBankBalance(uid, { accountId: str(f, "account"), balance: num(f, "balance") })));
+export async function setDepositAlert(f: FormData) {
+  return act("/accounts", "Account policy saved.", guard(["bank_account:manage"], (uid) => dbl(withUser(uid, (tx) => tx.q("SELECT set_large_deposit_threshold($1,$2)", [str(f, "account"), num(f, "threshold")])))));
+}
+
+// ---------- Weekly treasury ----------
+const ids = (f: FormData, k: string) => f.getAll(k).map(String);
+export async function recordFigure(f: FormData) {
+  const accountId = str(f, "account"), opening = str(f, "opening") === "1";
+  return act(`/treasury/${accountId}`, opening ? "Opening balance recorded." : "Balance check recorded.", guard(["bank_balance:update"], (uid) =>
+    t.recordFigure(uid, { accountId, figure: num(f, "figure"), processed: ids(f, "processed"), shown: ids(f, "shown"), opening })));
+}
+export async function undoTick(f: FormData) {
+  return act(`/treasury/${str(f, "account")}`, "Tick undone. The next balance check will ask about this payment again.", guard(["bank_balance:update"], (uid) => t.undoProcessedTick(uid, { requestId: str(f, "id"), reason: str(f, "reason") })));
+}
+export async function startReconciliation(f: FormData) {
+  const accountId = str(f, "account");
+  return act(`/treasury/${accountId}`, "Statement figures saved.", guard(["reconciliation:prepare"], (uid) => t.startReconciliation(uid, { accountId, week: str(f, "week"), closing: num(f, "closing"), deposits: num(f, "deposits") })));
+}
+const week = (f: FormData) => `/treasury/week/${str(f, "week")}`;
+export async function matchPayment(f: FormData) {
+  return act(week(f), "Payment matched. It becomes Paid when the week is locked.", guard(["reconciliation:prepare"], (uid) => t.matchPayment(uid, { week: str(f, "week"), requestId: str(f, "id"), date: str(f, "date"), reference: str(f, "reference") })));
+}
+export async function addReconciliationLine(f: FormData) {
+  return act(week(f), "Line added.", guard(["reconciliation:prepare"], (uid) => t.addReconciliationLine(uid, { week: str(f, "week"), kind: str(f, "kind"), amount: num(f, "amount"), reason: str(f, "reason"), date: str(f, "date") || null, reference: str(f, "reference"), known: str(f, "known") === "on" })));
+}
+export async function removeReconciliationLine(f: FormData) {
+  return act(week(f), "Removed.", guard(["reconciliation:prepare"], (uid) => t.removeReconciliationLine(uid, { line: str(f, "line"), reason: str(f, "reason") })));
+}
+export async function submitReconciliation(f: FormData) {
+  const reasons = Object.fromEntries(ids(f, "carry").map((id) => [id, str(f, `reason_${id}`)]));
+  return act(week(f), "Sent to the Finance Manager for review.", guard(["reconciliation:prepare"], (uid) => t.submitReconciliation(uid, { week: str(f, "week"), revision: num(f, "revision"), reasons, explanation: str(f, "explanation") })));
+}
+export async function returnReconciliation(f: FormData) {
+  return act(week(f), "Returned to the Accountant.", guard(["reconciliation:lock"], (uid) => t.returnReconciliation(uid, { week: str(f, "week"), reason: str(f, "reason") })));
+}
+export async function lockWeek(f: FormData) {
+  return act(week(f), "Week locked. Matched payments are now Paid.", guard(["reconciliation:lock"], (uid) => t.lockWeek(uid, { week: str(f, "week"), revision: num(f, "revision") })));
 }
 
 export async function recordExecution(f: FormData) {

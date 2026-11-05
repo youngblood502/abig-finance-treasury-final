@@ -43,7 +43,7 @@ describe("group reporting", () => {
       const codes = (await rows(c, "SELECT code FROM companies")).map((r) => r.code);
       expect(codes).toEqual(expect.arrayContaining(["ASKU", "BEES"]));
       expect(codes).not.toContain("DAILYMART");
-      expect(await fails(c, "SELECT update_bank_balance($1, 1)", [CBE])).toMatch(/you may not update the balance/);
+      expect(await fails(c, "SELECT record_opening_balance($1, 1)", [CBE])).toMatch(/you may not update the balance/);
     });
   });
 });
@@ -105,7 +105,7 @@ describe("account access history", () => {
 });
 
 describe("bank balance updates and audit", () => {
-  const upd = "SELECT update_bank_balance($1, $2)";
+  const upd = "SELECT record_opening_balance($1, $2)";
   it("only an Accountant of a company linked with the update right can enter a balance; others cannot", async () => {
     await as(user.samuel, async (c) => { await c.query(upd, [CBE, 4300000]); });   // owner company accountant
     await as(user.tigist, async (c) => { await c.query(upd, [CBE, 4310000]); });   // Berbero accountant, shared with RECORD_SNAPSHOT

@@ -55,7 +55,7 @@ BEGIN
   w := register_wallet_account(asku, 'ASKU Telebirr', '0911 000 111', 0);
   k := register_cash_account(asku, 'ASKU petty cash', 0);
   PERFORM set_config('app.user_id', meron::text, true);
-  PERFORM update_bank_balance(w, 45000); PERFORM update_bank_balance(k, 20000);
+  PERFORM record_opening_balance(w, 45000); PERFORM record_opening_balance(k, 20000);
   -- A plain draft.
   PERFORM pg_temp.demo(asku, hawassa, bd_h, meron, awash, ARRAY[250000], ARRAY[20], 'NORMAL', 'HP-2026-0101');
 END $$;

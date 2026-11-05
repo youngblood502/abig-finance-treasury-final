@@ -55,6 +55,11 @@ export const key = () => (randomUUID() + randomUUID()).replace(/-/g, "").slice(0
 export async function fn(c: Client, name: string, ...args: unknown[]) {
   return (await c.query(`SELECT ${name}(${args.map((_, i) => "$" + (i + 1)).join(",")}) AS v`, args)).rows[0].v;
 }
+/** Enters the bank's figure: the week's opening balance the first time, a balance check after that. */
+export async function enterFigure(c: Client, account: string, figure: number, processed: string[] = []) {
+  const opened = (await c.query("SELECT 1 FROM treasury_weeks WHERE account_id = $1 AND week_start = treasury_week_start($1) AND opening_entry_id IS NOT NULL", [account])).rowCount;
+  return (await c.query(`SELECT * FROM ${opened ? "record_balance_check" : "record_opening_balance"}($1,$2,$3)`, [account, figure, processed])).rows[0];
+}
 export interface MkOpts { ref?: string | null; person?: string; detail?: string | null; noDocument?: boolean; company?: string; supplier?: string; bank?: string; account?: string | null; amounts?: number[]; dues?: string[]; priority?: string; method?: string }
 /** Creates a complete draft (installments, invoice file) as `creator` and returns its id. Run inside as(creator, ...). */
 export async function mk(c: Client, creator: string, opt: string | MkOpts = {}) {

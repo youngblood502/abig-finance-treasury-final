@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
-import { actAs, ASKU, authorized, AWASH, BD_HAWASSA, BERBERO, fails, fn, mk, rows, S_HAWASSA, setupDb, user } from "./helpers";
+import { actAs, ASKU, authorized, AWASH, BD_HAWASSA, BERBERO, enterFigure, fails, fn, mk, rows, S_HAWASSA, setupDb, user } from "./helpers";
 import { blindIndex, decryptSecret } from "../src/lib/crypto";
 import { maskId, normalizeIdNumber, protectIdNumber, revealIdNumber } from "../src/lib/payees";
 import { accountPlace, METHODS_FOR_KIND } from "../src/lib/format";
@@ -33,7 +33,7 @@ beforeAll(async () => {
   wallet = await fn(owner, "register_wallet_account", ASKU, "ASKU Telebirr", "0911 000 111", 0);
   cash = await fn(owner, "register_cash_account", ASKU, "ASKU petty cash", 0);
   await actAs(owner, user.meron);
-  await owner.query("SELECT update_bank_balance($1, 500000)", [wallet]); await owner.query("SELECT update_bank_balance($1, 300000)", [cash]);
+  await enterFigure(owner, wallet, 500000); await enterFigure(owner, cash, 300000);
   person = await addPerson(owner, ASKU, "Almaz Bekele", "0911 234 567", ID);
   bankDetail = await addDetail(owner, person, "BANK", "CBE", "5521", null);
   teleDetail = await addDetail(owner, person, "TELEBIRR", null, null, "0911 234 567");
@@ -350,7 +350,7 @@ describe("account types", () => {
 describe("cash and wallet balances work like bank balances", () => {
   it.each([["cash", () => cash], ["wallet", () => wallet]])("%s: count, history, reservation, buffer and debit", async (_n, acct) => {
     await tx(async (c) => {
-      await actAs(c, user.meron); await c.query("SELECT update_bank_balance($1, 250000)", [acct()]);
+      await actAs(c, user.meron); await enterFigure(c, acct(), 250000);
       expect(await balance(c, acct())).toEqual({ current: 250000, reserved: 0, available: 250000, shortfall: 0 });
       expect((await rows(c, "SELECT new_balance FROM account_balance_history($1, 1)", [acct()]))[0].new_balance).toBe("250000.0000");
       await actAs(c, user.kebede); await c.query("SELECT set_account_policy($1, 50000)", [acct()]);
@@ -364,13 +364,13 @@ describe("cash and wallet balances work like bank balances", () => {
   it("a cash count below what is reserved is a shortfall and blocks new submissions", async () => {
     await tx(async (c) => {
       await actAs(c, user.meron); const a = await mk(c, user.meron, { amounts: [200000], method: "CASH", account: cash, ...asPerson("CASH") }); await fn(c, "wf_submit", a);
-      await c.query("SELECT update_bank_balance($1, 150000)", [cash]); expect((await balance(c, cash)).shortfall).toBe(50000);
+      await enterFigure(c, cash, 150000); expect((await balance(c, cash)).shortfall).toBe(50000);
       const b = await mk(c, user.meron, { amounts: [1], ref: "B", method: "CASH", account: cash, ...asPerson("CASH") });
       expect(await fails(c, "SELECT wf_submit($1)", [b])).toMatch(/in shortfall/);
     });
   });
   it("only someone allowed to enter balances counts the cash", async () => {
-    await as(user.dawit, async (c) => { expect(await fails(c, "SELECT update_bank_balance($1, 1)", [cash])).toMatch(/you may not update/); });
+    await as(user.dawit, async (c) => { expect(await fails(c, "SELECT record_opening_balance($1, 1)", [cash])).toMatch(/you may not update/); });
   });
   it("an authenticated cash payment is processed at once and stays Authenticated; others wait for the bank", async () => {
     await tx(async (c) => {
