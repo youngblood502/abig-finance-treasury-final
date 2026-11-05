@@ -19,6 +19,9 @@ Agreed decision: these become Paid at go-live. No migration does this, so it nev
 `psql "$MIGRATION_DATABASE_URL" -c "SELECT mark_authenticated_paid_at_go_live('<user id>', 'Test data, marked Paid at go-live')"`
 It moves no money (they were debited when authenticated), it is written to the audit trail, and the status is final. Run it only once real payments have not started: afterwards every authenticated request is treated as paid.
 
+## Encryption key
+People's ID numbers are encrypted with `APP_ENCRYPTION_KEY`, and duplicates are found with a hash built from the same key. Set the key before the first person is entered. Keep a copy somewhere safe, apart from the backups: without it, encrypted ID numbers cannot be read, and changing it makes existing ones unreadable and stops duplicates being found.
+
 ## Backups (do this before go-live)
 `ops/backup.sh` writes a database dump and a copy of the uploaded invoices, with checksums, and removes copies older than 30 days. Run it from cron every night, as the owner of the backup folder:
 `0 2 * * * MIGRATION_DATABASE_URL=... BACKUP_DIR=/var/backups/abig STORAGE_DIR=/path/to/storage /path/to/ops/backup.sh`

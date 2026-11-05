@@ -1,6 +1,6 @@
 import { Flash, ShortfallChip } from "@/components";
 import { grantAccess, registerAccount, revokeAccess, setAccountPolicy, updateBalance } from "../actions";
-import { dtime, etb } from "@/lib/format";
+import { ACCOUNT_KINDS, accountPlace, dtime, etb } from "@/lib/format";
 import { withUser } from "@/lib/db";
 import { requireAccess } from "@/lib/rbac";
 import { currentUserId, requireMe, hasPermission } from "@/lib/session";
@@ -11,11 +11,11 @@ export default async function Accounts({ searchParams }: { searchParams: Promise
   const d = await withUser(uid, async (tx) => {
     // Who may update or manage an account is decided in the database (app_can_snapshot / app_can_manage_access).
     const accounts = await tx.q<any>(
-      `SELECT a.id, a.account_label, b.name AS bank_name, a.account_last4, a.min_buffer, a.is_active,
+      `SELECT a.id, a.account_label, a.account_kind::text AS account_kind, a.wallet_phone, b.name AS bank_name, a.account_last4, a.min_buffer, a.is_active,
               a.current_balance, a.reserved_balance, a.available_balance, a.shortfall_amount, a.balance_updated_at,
               o.id AS owner_company_id, o.legal_name AS owner,
               app_can_snapshot(a.id) AS can_update, app_can_manage_access(a.id) AS can_manage
-         FROM company_bank_accounts a JOIN banks b ON b.id = a.bank_id LEFT JOIN companies o ON o.id = account_owner_company(a.id)
+         FROM company_bank_accounts a LEFT JOIN banks b ON b.id = a.bank_id LEFT JOIN companies o ON o.id = account_owner_company(a.id)
         ORDER BY a.account_label`);
     for (const a of accounts) {
       a.users = await tx.q<any>("SELECT g.id, c.legal_name AS name, g.is_owner, g.permissions FROM company_bank_account_access g JOIN companies c ON c.id = g.company_id WHERE g.account_id = $1 AND g.revoked_at IS NULL ORDER BY g.is_owner DESC, c.legal_name", [a.id]);
@@ -31,7 +31,7 @@ export default async function Accounts({ searchParams }: { searchParams: Promise
   const totalAvailable = active.reduce((s: number, a: any) => s + Number(a.available_balance), 0);
   return (
     <>
-      <h1>Bank accounts</h1><p className="sub">One balance per account, however many companies share it.</p><Flash sp={sp} />
+      <h1>Accounts</h1><p className="sub">One balance per account, however many companies share it.</p><Flash sp={sp} />
       {d.accounts.length === 0 && <div className="card">No bank accounts are available to you.</div>}
       {d.accounts.length > 0 && (<>
         <h2>Account Cash Summary</h2>
@@ -44,7 +44,7 @@ export default async function Accounts({ searchParams }: { searchParams: Promise
       </>)}
       {d.accounts.map((a: any) => (
         <div className="card" key={a.id}>
-          <div className="row"><div><b>{a.account_label}</b> <span className="mute">{a.bank_name} ••••{a.account_last4}</span><div className="mute">Legal owner: {a.owner ?? "none"}</div></div>
+          <div className="row"><div><b>{a.account_label}</b> <span className="mute">{accountPlace(a)}</span><div className="mute">Legal owner: {a.owner ?? "none"}</div></div>
             <div style={{ textAlign: "right" }}><b>{etb(a.available_balance)}</b><div className="mute">available</div></div></div>
           <div className="figs" style={{ marginTop: 10 }}>
             <div className="card"><b>{etb(a.current_balance)}</b><span>Current balance</span></div>
@@ -56,9 +56,9 @@ export default async function Accounts({ searchParams }: { searchParams: Promise
             <ShortfallChip amount={a.shortfall_amount} />{!a.is_active && <span className="chip b">Inactive</span>}</div>
           {a.can_update && (
             <form action={updateBalance} className="form" style={{ marginTop: 10 }}><input type="hidden" name="account" value={a.id} />
-              <label className="f">Total amount now in the bank (ETB)<input name="balance" type="number" step="0.01" min="0" required placeholder={String(Number(a.current_balance))} /></label>
+              <label className="f">{a.account_kind === "CASH" ? "Cash counted now (ETB)" : a.account_kind === "WALLET" ? "Total amount now in the wallet (ETB)" : "Total amount now in the bank (ETB)"}<input name="balance" type="number" step="0.01" min="0" required placeholder={String(Number(a.current_balance))} /></label>
               <button>Update balance</button></form>)}
-          {a.can_update && <p className="mute">Enter the overall amount in the bank account, not a single transaction. A figure below the reserved {etb(a.reserved_balance)} is accepted: the account then shows a shortfall, the Finance Manager is told, and new submissions on it are blocked.</p>}
+          {a.can_update && <p className="mute">Enter the overall amount in the account, not a single transaction. A figure below the reserved {etb(a.reserved_balance)} is accepted: the account then shows a shortfall, the Finance Manager is told, and new submissions on it are blocked.</p>}
           <details style={{ marginTop: 10 }}><summary>Balance history</summary>
             {a.history.length === 0 ? <p className="mute">No balance updates yet.</p> : (
               <div className="scroll"><table><thead><tr><th>When</th><th className="n">Previous</th><th className="n">New</th><th>Reason</th><th>By</th></tr></thead>
@@ -78,9 +78,12 @@ export default async function Accounts({ searchParams }: { searchParams: Promise
             </details>)}
         </div>))}
       {registrars.length > 0 && (<>
-        <h2>Register a bank account</h2>
+        <h2>Register an account</h2>
+        <p className="mute">A bank account needs its bank and last 4 digits, a Telebirr wallet its phone number, and a cash account only a name.</p>
         <form action={registerAccount} className="card form"><label className="f">Owned by<select name="owner">{registrars.map((m) => <option key={m.company_id} value={m.company_id}>{m.company}</option>)}</select></label>
-          <label className="f">Bank<input name="bank" required /></label><label className="f">Account name<input name="label" required /></label><label className="f">Last 4 digits<input name="last4" required pattern="[0-9]{4}" maxLength={4} /></label>
+          <label className="f">Type<select name="kind" defaultValue="BANK">{Object.entries(ACCOUNT_KINDS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+          <label className="f">Account name<input name="label" required /></label><label className="f">Bank<input name="bank" /></label><label className="f">Last 4 digits<input name="last4" pattern="[0-9]{4}" maxLength={4} /></label>
+          <label className="f">Telebirr phone<input name="phone" type="tel" placeholder="0911 234 567" /></label>
           <label className="f">Minimum buffer (ETB)<input name="buffer" type="number" min="0" step="0.01" defaultValue={0} /></label><button>Register</button></form></>)}
     </>
   );

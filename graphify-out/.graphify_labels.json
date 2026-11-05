@@ -1,6 +1,5 @@
 {
   "0": "Session and RBAC Pages",
-  "1": "Integration Test Suite",
   "2": "Auth and Admin Actions",
   "3": "Documentation and Workflows",
   "4": "Payment Workflow Actions",
@@ -14,7 +13,6 @@
   "15": "NPM Scripts",
   "16": "Runtime Dependencies",
   "17": "Compose Database Service",
-  "18": "Bank Account Use Approvals",
   "19": "Compose Migrate Service",
   "20": "Scheduler and Cash Forecast",
   "22": "Request Reservation Guards",

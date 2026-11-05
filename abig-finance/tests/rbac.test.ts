@@ -32,7 +32,7 @@ describe("what each role is offered", () => {
   });
   it("Administrator: everything, including administration", () => {
     const m = me({ isAdmin: true });
-    expect(paths(m)).toEqual(["/", "/requests", "/approvals", "/accounts", "/suppliers", "/reports", "/admin"]);
+    expect(paths(m)).toEqual(["/", "/requests", "/approvals", "/accounts", "/suppliers", "/payees", "/reports", "/admin"]);
     expect(can(m, "user:manage")).toBe(true); expect(can(m, "payment_request:authenticate")).toBe(true); expect(canAccess(m, "/requests/new")).toBe(true);
   });
   it("group reporting people read requests, accounts and reports but cannot act or administer", () => {

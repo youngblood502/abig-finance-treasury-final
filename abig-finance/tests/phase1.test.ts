@@ -138,7 +138,13 @@ describe("Cancelled and Rejected mean different things", () => {
 describe("payment methods", () => {
   it.each(["TRANSFER", "CHEQUE", "CASH", "TELEBIRR"])("%s goes through to authentication, and the method is logged", async (method) => {
     await tx(async (c) => {
-      const { id } = await authorized(c, { amounts: [1000], method });
+      let account: string | undefined;
+      if (method === "CASH" || method === "TELEBIRR") {   // each draws on its own kind of account
+        await actAs(c, user.kebede);
+        account = method === "CASH" ? await fn(c, "register_cash_account", ASKU, "Till", 0) : await fn(c, "register_wallet_account", ASKU, "Wallet", "0911000999", 0);
+        await actAs(c, user.meron); await setBalance(c, 5000, account);
+      }
+      const { id } = await authorized(c, { amounts: [1000], method, ...(account ? { account } : {}) });
       expect((await req(c, id)).m).toBe(method);
       expect((await rows(c, "SELECT metadata FROM audit_events WHERE action = 'PAYMENT_AUTHENTICATED' AND entity_id = $1", [id]))[0].metadata).toMatchObject({ method, amount: 1000 });
     });
@@ -159,7 +165,7 @@ describe("payment methods", () => {
     });
     await tx(async (c) => {
       const id = await submitted(c, 100);
-      expect(await fails(c, "UPDATE payment_requests SET payment_method = 'CASH' WHERE id = $1", [id])).toMatch(/locked after submission/);
+      expect(await fails(c, "UPDATE payment_requests SET payment_method = 'CHEQUE' WHERE id = $1", [id])).toMatch(/locked after submission/);
     });
   });
 });

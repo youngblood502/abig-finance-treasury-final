@@ -55,7 +55,7 @@ export const key = () => (randomUUID() + randomUUID()).replace(/-/g, "").slice(0
 export async function fn(c: Client, name: string, ...args: unknown[]) {
   return (await c.query(`SELECT ${name}(${args.map((_, i) => "$" + (i + 1)).join(",")}) AS v`, args)).rows[0].v;
 }
-export interface MkOpts { ref?: string; company?: string; supplier?: string; bank?: string; account?: string | null; amounts?: number[]; dues?: string[]; priority?: string; method?: string }
+export interface MkOpts { ref?: string | null; person?: string; detail?: string | null; noDocument?: boolean; company?: string; supplier?: string; bank?: string; account?: string | null; amounts?: number[]; dues?: string[]; priority?: string; method?: string }
 /** Creates a complete draft (installments, invoice file) as `creator` and returns its id. Run inside as(creator, ...). */
 export async function mk(c: Client, creator: string, opt: string | MkOpts = {}) {
   const o: MkOpts = typeof opt === "string" ? { ref: opt } : opt;
@@ -63,11 +63,15 @@ export async function mk(c: Client, creator: string, opt: string | MkOpts = {}) 
   const company = o.company ?? ASKU;
   // A request names the account it is paid from: ASKU pays from its own Awash account, Berbero from the shared BEES CBE account.
   const account = o.account === undefined ? (company === BERBERO ? CBE : AWASH) : o.account;
-  const id = (await c.query(`INSERT INTO payment_requests (debtor_company_id, supplier_id, supplier_bank_detail_id, debit_account_id, created_by, invoice_ref, invoice_date, total_amount, priority)
-    VALUES ($1,$2,$3,$4,$5,$6,'2026-10-01',$7,$8) RETURNING id`, [company, o.supplier ?? S_HAWASSA, o.bank ?? BD_HAWASSA, account, creator, o.ref ?? "INV-" + randomUUID().slice(0, 8), amounts.reduce((a, b) => a + b, 0), o.priority ?? "NORMAL"])).rows[0].id as string;
+  const ref = o.ref === undefined ? "INV-" + randomUUID().slice(0, 8) : o.ref, total = amounts.reduce((a, b) => a + b, 0);
+  const id = (o.person
+    ? await c.query(`INSERT INTO payment_requests (debtor_company_id, payee_type, person_payee_id, person_payment_detail_id, debit_account_id, created_by, invoice_ref, invoice_date, total_amount, priority)
+        VALUES ($1,'PERSON',$2,$3,$4,$5,$6,'2026-10-01',$7,$8) RETURNING id`, [company, o.person, o.detail ?? null, account, creator, ref, total, o.priority ?? "NORMAL"])
+    : await c.query(`INSERT INTO payment_requests (debtor_company_id, supplier_id, supplier_bank_detail_id, debit_account_id, created_by, invoice_ref, invoice_date, total_amount, priority)
+        VALUES ($1,$2,$3,$4,$5,$6,'2026-10-01',$7,$8) RETURNING id`, [company, o.supplier ?? S_HAWASSA, o.bank ?? BD_HAWASSA, account, creator, ref, total, o.priority ?? "NORMAL"])).rows[0].id as string;
   if (o.method) await c.query("UPDATE payment_requests SET payment_method = $2::payment_method WHERE id = $1", [id, o.method]);
   for (const [i, amt] of amounts.entries()) await c.query("INSERT INTO payment_installments (request_id, seq, due_date, amount) VALUES ($1,$2,$3::date,$4)", [id, i + 1, o.dues?.[i] ?? "2026-11-01", amt]);
-  await c.query(`INSERT INTO attachments (request_id, kind, object_key, filename, mime_type, size_bytes, sha256, uploaded_by) VALUES ($1,'INVOICE',$2,'inv.pdf','application/pdf',1000,$3,$4)`, [id, key(), key(), creator]);
+  if (!o.noDocument) await c.query(`INSERT INTO attachments (request_id, kind, object_key, filename, mime_type, size_bytes, sha256, uploaded_by) VALUES ($1,'INVOICE',$2,'inv.pdf','application/pdf',1000,$3,$4)`, [id, key(), key(), creator]);
   return id;
 }
 /** Takes a new request all the way to AUTHENTICATED (debited, not yet paid). Returns the request id and its installment ids in order. */

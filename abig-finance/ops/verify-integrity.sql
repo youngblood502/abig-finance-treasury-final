@@ -35,9 +35,16 @@ WITH checks AS (
   UNION ALL SELECT 'request past draft without a debit account', count(*) FROM payment_requests r WHERE r.workflow_state NOT IN ('DRAFT','SCHEDULED','REJECTED','CANCELLED') AND r.debit_account_id IS NULL
   UNION ALL SELECT 'request debiting an account its company is not linked to', count(*) FROM payment_requests r
     WHERE r.debit_account_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM company_bank_account_access g WHERE g.account_id = r.debit_account_id AND g.company_id = r.debtor_company_id AND 'USE' = ANY(g.permissions))
-  UNION ALL SELECT 'submitted request without a current invoice file', count(*) FROM payment_requests r
-    WHERE r.workflow_state IN ('RESERVED','VERIFIED','AUTHENTICATED','PAID') AND NOT EXISTS (SELECT 1 FROM attachments a WHERE a.request_id = r.id AND a.kind = 'INVOICE' AND NOT EXISTS (SELECT 1 FROM attachments b WHERE b.supersedes_id = a.id))
+  UNION ALL SELECT 'request without exactly one payee', count(*) FROM payment_requests r WHERE (r.supplier_id IS NULL) = (r.person_payee_id IS NULL)
+  UNION ALL SELECT 'request paying a person from another company', count(*) FROM payment_requests r JOIN person_payees p ON p.id = r.person_payee_id WHERE p.company_id <> r.debtor_company_id
+  UNION ALL SELECT 'payment method that does not fit its account', count(*) FROM payment_requests r JOIN company_bank_accounts a ON a.id = r.debit_account_id
+    WHERE r.workflow_state IN ('RESERVED','VERIFIED','AUTHENTICATED','PAID')
+      AND NOT ((r.payment_method = 'CASH' AND a.account_kind = 'CASH') OR (r.payment_method = 'TELEBIRR' AND a.account_kind = 'WALLET') OR (r.payment_method IN ('TRANSFER','CHEQUE') AND a.account_kind = 'BANK'))
+  UNION ALL SELECT 'authenticated cash payment not marked as processed', count(*) FROM payment_requests r
+    WHERE r.payment_method = 'CASH' AND r.workflow_state IN ('AUTHENTICATED','PAID') AND r.bank_processed_at IS NULL
   UNION ALL SELECT 'supplier with more than one verified bank detail', count(*) FROM (SELECT supplier_id FROM supplier_bank_details WHERE status = 'VERIFIED' GROUP BY supplier_id HAVING count(*) > 1) x
+  UNION ALL SELECT 'person with more than one verified detail of a kind', count(*) FROM (SELECT person_id FROM person_payment_details WHERE status = 'VERIFIED' GROUP BY person_id, kind HAVING count(*) > 1) x
+  UNION ALL SELECT 'person payment details verified by the person who entered them', count(*) FROM person_payment_details d WHERE d.verified_by = d.created_by
   -- Access.
   UNION ALL SELECT 'person holding a company-limited role in more companies than the role allows', count(*) FROM (
     SELECT cm.user_id, mr.role_id FROM membership_roles mr JOIN company_memberships cm ON cm.id = mr.membership_id AND cm.revoked_at IS NULL JOIN roles r ON r.id = mr.role_id

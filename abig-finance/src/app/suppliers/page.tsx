@@ -1,5 +1,5 @@
 import { Flash } from "@/components";
-import { addBankDetail, addSupplier, decideBankDetail, linkSupplier, updateSupplier } from "../actions";
+import { addBankDetail, addSupplier, linkSupplier, rejectBankDetail, updateSupplier, verifyBankDetail } from "../actions";
 import { withUser } from "@/lib/db";
 import { can, requireAccess } from "@/lib/rbac";
 import { currentUserId, requireMe } from "@/lib/session";
@@ -31,8 +31,8 @@ export default async function Suppliers({ searchParams }: { searchParams: Promis
           <table><tbody>{d.banks.filter((b: any) => b.supplier_id === s.id).map((b: any) => (
             <tr key={b.id}><td>Version {b.version}</td><td>{b.bank_name} ••••{b.account_last4}</td><td>{chip(b.status)}{b.rejection_reason && <span className="mute"> {b.rejection_reason}</span>}</td>
               <td>{b.status === "PENDING" && canVerify && b.created_by !== me.id && (
-                <form action={decideBankDetail} className="inline"><input type="hidden" name="id" value={b.id} /><input name="reason" placeholder="Reason (to reject)" aria-label="Reason to reject" />
-                  <button name="decision" value="verify">Verify</button><button name="decision" value="reject" className="sec">Reject</button></form>)}
+                <form action={verifyBankDetail} className="inline"><input type="hidden" name="id" value={b.id} /><input name="reason" placeholder="Reason (to reject)" aria-label="Reason to reject" />
+                  <button>Verify</button><button formAction={rejectBankDetail} className="sec">Reject</button></form>)}
                 {b.status === "PENDING" && b.created_by === me.id && <span className="mute">Someone else must verify this</span>}</td></tr>))}</tbody></table>
         </div>))}
       {canEnter && (<>
