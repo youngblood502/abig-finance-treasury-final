@@ -10,7 +10,7 @@ const snapshot = async () => ({
   requests: await rows(owner, "SELECT id, workflow_state, version, supplier_id, supplier_bank_detail_id, debit_account_id, total_amount, payment_method FROM payment_requests ORDER BY id"),
   accounts: await rows(owner, "SELECT id, account_label, account_last4, bank_id, current_balance, reserved_balance, available_balance FROM company_bank_accounts ORDER BY id"),
   approvals: await rows(owner, "SELECT * FROM approval_events ORDER BY id"), events: await rows(owner, "SELECT * FROM request_events ORDER BY id"),
-  audit: await rows(owner, "SELECT * FROM audit_events ORDER BY id"), history: await rows(owner, "SELECT * FROM bank_balance_history ORDER BY id"),
+  audit: await rows(owner, "SELECT * FROM audit_events ORDER BY id"), history: await rows(owner, "SELECT id, account_id, previous_balance, new_balance, updated_by, updated_at, request_id FROM bank_balance_history ORDER BY id"),
 });
 
 beforeAll(async () => {

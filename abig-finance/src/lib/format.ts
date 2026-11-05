@@ -21,6 +21,9 @@ export const STATE_LABEL: Record<string, string> = {
 export const PAYMENT_METHODS: Record<string, string> = { TRANSFER: "Transfer", CHEQUE: "Cheque", CASH: "Cash", TELEBIRR: "Telebirr" };
 /** The methods each kind of account can pay with. The database enforces the same rule. */
 export const METHODS_FOR_KIND: Record<string, string[]> = { BANK: ["TRANSFER", "CHEQUE"], WALLET: ["TELEBIRR"], CASH: ["CASH"] };
+export const ENTRY_KINDS: Record<string, string> = { OPENING: "Opening balance", CHECK: "Balance check", PAYMENT: "Payment", CANCEL_RELEASE: "Cancellation", RECONCILIATION_ADJUSTMENT: "Reconciliation adjustment" };
+export const ANOMALIES: Record<string, string> = { NEGATIVE_DEPOSIT: "Money left that the system does not know about", LARGE_DEPOSIT: "Large deposit", OPENING_CHANGED: "Balance changed between weeks" };
+export const WEEK_STATUS: Record<string, string> = { OPEN: "Open", RECONCILING: "Being reconciled", LOCKED: "Locked" };
 export const ACCOUNT_KINDS: Record<string, string> = { BANK: "Bank account", WALLET: "Telebirr wallet", CASH: "Cash" };
 /** Where an account's money is: its bank and last four digits, its wallet phone, or plain cash. */
 export const accountPlace = (a: { account_kind?: string; bank_name?: string | null; account_last4?: string | null; wallet_phone?: string | null }) =>

@@ -39,6 +39,14 @@ Use a private window per person, or sign out between people. The accounts: ASKU 
 9. **Reports.** Waiting for payment (with age buckets), payments made (date range), cash and commitments, audit trail. Download the CSV files.
 10. **Administration.** As the administrator: Companies (edit name, TIN, phone), People and access (give a role in a company; try giving an Accountant a second company and read the refusal; give a Finance Manager several), Roles and permissions (set a role's company limit; notice that Accountants cannot be given approval permissions and nobody can be given user administration), add a person (a temporary password is shown once), reset a password, deactivate someone. Try five wrong passwords and see the account lock for 15 minutes.
 
+## The weekly cycle (Weekly treasury in the menu)
+
+1. As an Accountant, record the opening balance of an account. The dashboard stops listing it.
+2. Authenticate a transfer and a cheque on it, then enter a balance check: the transfer is ticked, the cheque is not, and the log shows the bank figure, what is not yet processed, the system balance and the implied deposit.
+3. Start the reconciliation from the account's page. Match the transfer, add a bank charge, give a reason for carrying the cheque, and send it for review.
+4. As a Finance Manager of the company that owns the account, lock it. The transfer is Paid, the cheque is still Authenticated, and nothing in the week can change.
+5. Record next week's opening: the cheque is listed as carried over. Match it in that week's reconciliation.
+
 ## Things to try to break
 Enter a bank reference twice; submit a request whose installments do not add up; upload a text file renamed to .pdf; open another company's request by pasting its address while signed in as someone from a different company (you should get "not found"); use the browser's Back button after approving.
 

@@ -14,7 +14,7 @@ const paths = (m: Me) => navFor(m).map((x) => x.path);
 describe("what each role is offered", () => {
   it("Accountant: requests, accounts, suppliers and reports; no approvals and no administration", () => {
     const m = me({ perms: ACCOUNTANT });
-    expect(paths(m)).toEqual(["/", "/requests", "/accounts", "/suppliers", "/reports"]);
+    expect(paths(m)).toEqual(["/", "/requests", "/accounts", "/treasury", "/suppliers", "/reports"]);
     expect(canAccess(m, "/requests/new")).toBe(true); expect(canAccess(m, "/approvals")).toBe(false); expect(canAccess(m, "/admin")).toBe(false);
     expect(can(m, "payment_request:verify")).toBe(false); expect(can(m, "payment_request:authenticate")).toBe(false); expect(can(m, "user:manage")).toBe(false);
   });
@@ -32,7 +32,7 @@ describe("what each role is offered", () => {
   });
   it("Administrator: everything, including administration", () => {
     const m = me({ isAdmin: true });
-    expect(paths(m)).toEqual(["/", "/requests", "/approvals", "/accounts", "/suppliers", "/payees", "/reports", "/admin"]);
+    expect(paths(m)).toEqual(["/", "/requests", "/approvals", "/accounts", "/treasury", "/suppliers", "/payees", "/reports", "/admin"]);
     expect(can(m, "user:manage")).toBe(true); expect(can(m, "payment_request:authenticate")).toBe(true); expect(canAccess(m, "/requests/new")).toBe(true);
   });
   it("group reporting people read requests, accounts and reports but cannot act or administer", () => {
@@ -43,7 +43,7 @@ describe("what each role is offered", () => {
     const m = me({ perms: FINANCE_MANAGER, company: "c1" });
     expect(can(m, "payment_request:verify", "c1")).toBe(true); expect(can(m, "payment_request:verify", "c2")).toBe(false);
   });
-  it("unknown paths are closed by default", () => { expect(canAccess(me({ isAdmin: true }), "/treasury")).toBe(false); });
+  it("unknown paths are closed by default", () => { expect(canAccess(me({ isAdmin: true }), "/nowhere")).toBe(false); });
 });
 
 describe("permissions no role can hold (mirrors the database rule)", () => {

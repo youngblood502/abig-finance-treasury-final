@@ -10,6 +10,7 @@ export function translate(e: unknown): never {
     if (err.constraint === "person_payees_id_hash_key") throw new WorkflowError(409, "Someone in this company already has that ID number.");
     if (err.constraint === "company_bank_accounts_wallet_phone") throw new WorkflowError(409, "A Telebirr wallet with that phone number already exists.");
     if (err.constraint === "payment_requests_payee_chk") throw new WorkflowError(422, "A request pays either one supplier or one person.");
+    if (err.constraint === "reconciliation_lines_match_once") throw new WorkflowError(409, "That payment is already matched.");
     if (err.constraint === "payment_transactions_account_id_reference_key") throw new WorkflowError(409, "That bank reference was already recorded on this account.");
     if (/row-level security|permission denied/.test(err.message)) throw new WorkflowError(403, "You are not allowed to do that.");
     const status = ({ "40001": 409, "42501": 403, P0002: 404, "23514": 422, "23505": 409, "22023": 422, P0001: 422 } as Record<string, number>)[err.code];

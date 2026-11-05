@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client, Pool } from "pg";
-import { actAs, ASKU, authorized, AWASH, BD_ETHIO, BERBERO, CBE, fails, fn, mk, rows, S_ETHIO_ID, setupDb, user } from "./helpers";
+import { actAs, ASKU, authorized, AWASH, BD_ETHIO, BERBERO, CBE, enterFigure, fails, fn, mk, rows, S_ETHIO_ID, setupDb, user } from "./helpers";
 import { compose, tick } from "../src/worker/mail";
 
 let owner: Client; let as: Awaited<ReturnType<typeof setupDb>>["as"]; let workerUrl: string;
@@ -16,7 +16,7 @@ async function tx<T>(f: (c: Client) => Promise<T>): Promise<T> {
 }
 const req = async (c: Client, id: string) => (await rows(c, "SELECT workflow_state::text s, version v, payment_method::text m, cheque_no, bank_reference, paid_at, paid_by FROM payment_requests WHERE id=$1", [id]))[0];
 const bal = async (c: Client, id = AWASH) => { const r = (await rows(c, "SELECT current_balance c, reserved_balance r, available_balance a, shortfall_amount s FROM company_bank_accounts WHERE id=$1", [id]))[0]; return { current: Number(r.c), reserved: Number(r.r), available: Number(r.a), shortfall: Number(r.s) }; };
-const setBalance = (c: Client, amount: number, id = AWASH) => c.query("SELECT update_bank_balance($1,$2)", [id, amount]);
+const setBalance = (c: Client, amount: number, id = AWASH) => enterFigure(c, id, amount);
 const submitted = async (c: Client, amount: number, extra = {}) => { await actAs(c, user.meron); const id = await mk(c, user.meron, { amounts: [amount], ...extra }); await fn(c, "wf_submit", id); return id; };
 const shortfallEvents = (c: Client) => rows(c, "SELECT id, payload FROM notification_outbox WHERE event_type = 'ACCOUNT_SHORTFALL' ORDER BY created_at, id");
 const integrity = async (c: Client) => { const sql = readFileSync(join(__dirname, "../ops/verify-integrity.sql"), "utf8").replace(/^\\set.*$/m, ""); return Object.fromEntries((await c.query(sql)).rows.map((r) => [r.name, Number(r.violations)])); };
@@ -235,7 +235,7 @@ describe("shortfall: a bank figure below the reserved funds", () => {
     });
   });
   it("still refuses a negative figure", async () => {
-    await as(user.meron, async (c) => { expect(await fails(c, "SELECT update_bank_balance($1, -0.01)", [AWASH])).toMatch(/cannot be negative/); });
+    await as(user.meron, async (c) => { expect(await fails(c, "SELECT record_opening_balance($1, -0.01)", [AWASH])).toMatch(/cannot be negative/); });
   });
   it("blocks new submissions on that account with a clear message, and nothing is reserved", async () => {
     await tx(async (c) => {
