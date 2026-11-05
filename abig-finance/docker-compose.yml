@@ -1,0 +1,54 @@
+# One-server deployment: database, migrations, website, worker and an HTTPS proxy.
+#   cp .env.production.example .env.production   (fill it in)
+#   docker compose --env-file .env.production up -d --build
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment: { POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}", POSTGRES_DB: abig }
+    volumes: [dbdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U postgres -d abig"], interval: 5s, timeout: 3s, retries: 20 }
+    # Not published to the host: only the other services can reach it.
+
+  migrate:
+    build: { context: ., target: tools }
+    command: ["node", "ops/migrate.mjs"]
+    restart: "no"
+    depends_on: { db: { condition: service_healthy } }
+    environment:
+      MIGRATION_DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/abig
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD}
+      WORKER_DB_PASSWORD: ${WORKER_DB_PASSWORD}
+
+  app:
+    build: { context: ., target: app }
+    restart: unless-stopped
+    depends_on: { migrate: { condition: service_completed_successfully } }
+    environment:
+      DATABASE_URL: postgresql://abig_app:${APP_DB_PASSWORD}@db:5432/abig
+      AUTH_DATABASE_URL: postgresql://abig_auth:${AUTH_DB_PASSWORD}@db:5432/abig
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY}
+      STORAGE_DIR: /data/storage
+      REQUIRE_MFA: "true"
+    volumes: [storage:/data/storage]
+
+  worker:
+    build: { context: ., target: tools }
+    restart: unless-stopped
+    depends_on: { migrate: { condition: service_completed_successfully } }
+    environment:
+      WORKER_DATABASE_URL: postgresql://abig_worker:${WORKER_DB_PASSWORD}@db:5432/abig
+      APP_URL: https://${APP_DOMAIN}
+      SMTP_URL: ${SMTP_URL}
+      MAIL_FROM: ${MAIL_FROM}
+
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [app]
+    ports: ["80:80", "443:443"]
+    environment: { APP_DOMAIN: "${APP_DOMAIN}" }
+    volumes: [./Caddyfile:/etc/caddy/Caddyfile:ro, caddydata:/data]
+
+volumes: { dbdata: {}, storage: {}, caddydata: {} }

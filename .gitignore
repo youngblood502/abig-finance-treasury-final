@@ -1,0 +1,23 @@
+# Secrets and environment files (examples stay tracked)
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# Database dumps and backups: financial data, never in Git
+backups/
+*.dump
+*.dump.gpg
+abig-db-*
+abig-files-*
+SHA256SUMS-*
+
+# Build output and uploaded documents
+dist/
+.next/
+.storage/
+node_modules/
+*.tsbuildinfo
+
+# Graphify cache (graph.json and the report stay tracked)
+graphify-out/cache/
