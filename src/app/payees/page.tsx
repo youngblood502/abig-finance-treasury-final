@@ -1,5 +1,6 @@
 import { Flash } from "@/components";
 import { addPerson, addPersonDetail, rejectPersonDetail, updatePerson, verifyPersonDetail } from "../actions";
+import { companyScope } from "@/lib/company-scope";
 import { PAYMENT_METHODS } from "@/lib/format";
 import { maskId } from "@/lib/payees";
 import { withUser } from "@/lib/db";
@@ -11,10 +12,11 @@ const methodOptions = Object.entries(PAYMENT_METHODS).map(([k, v]) => <option ke
 export default async function Payees({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams; const uid = await currentUserId(); const me = await requireMe();
   requireAccess(me, "/payees");
+  const company = await companyScope(uid);
   const d = await withUser(uid, async (tx) => ({
     // Row-level security limits these to the person's own companies. The encrypted ID number cannot be read here at all.
     people: await tx.q<any>(`SELECT p.id, p.company_id, c.legal_name AS company, p.full_name, p.phone, p.id_last4, p.preferred_method::text AS preferred_method, p.is_active
-      FROM person_payees p JOIN companies c ON c.id = p.company_id ORDER BY p.full_name`),
+      FROM person_payees p JOIN companies c ON c.id = p.company_id WHERE $1::uuid IS NULL OR p.company_id = $1 ORDER BY p.full_name`, [company]),
     details: await tx.q<any>("SELECT id, person_id, version, kind, bank_name, account_last4, telebirr_phone, status, created_by, rejection_reason FROM person_payment_details ORDER BY person_id, version DESC"),
   }));
   const entering = me.memberships.filter((m) => m.permissions.includes("payee:manage"));

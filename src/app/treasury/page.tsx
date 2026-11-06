@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { Flash } from "@/components";
+import { accountInCompany } from "@/lib/company";
+import { companyScope } from "@/lib/company-scope";
 import { dstr, dtime, WEEK_STATUS } from "@/lib/format";
 import { withUser } from "@/lib/db";
 import { requireAccess } from "@/lib/rbac";
@@ -8,7 +10,8 @@ import { currentUserId, requireMe } from "@/lib/session";
 export default async function Treasury({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams; const uid = await currentUserId(); const me = await requireMe();
   requireAccess(me, "/treasury");
-  const weeks = await withUser(uid, (tx) => tx.q<any>("SELECT * FROM account_week_status()"));
+  const company = await companyScope(uid);
+  const weeks = await withUser(uid, (tx) => tx.q<any>(`SELECT * FROM account_week_status() s WHERE ${accountInCompany("s.account_id", "$1")}`, [company]));
   return (
     <>
       <h1>Weekly treasury</h1><p className="sub">Each account&apos;s week: opening balance, balance checks and reconciliation. Weeks run Monday to Sunday.</p><Flash sp={sp} />

@@ -9,6 +9,8 @@ import { message, translate, WorkflowError } from "@/lib/errors";
 import { currentUserId, requireMe } from "@/lib/session";
 import { assertCan } from "@/lib/rbac";
 import * as t from "@/lib/treasury";
+import { ALL_COMPANIES } from "@/lib/company";
+import { COMPANY_COOKIE, myCompanies } from "@/lib/company-scope";
 import { PERSON_DETAIL_FOR_METHOD, protectIdNumber } from "@/lib/payees";
 import { runWorkflow, type WorkflowAction } from "@/lib/workflow";
 
@@ -39,6 +41,15 @@ export async function switchUser(f: FormData) {
   (await cookies()).set("abig_dev_user", str(f, "user"), { httpOnly: true, sameSite: "lax", path: "/" });
   (await cookies()).delete("abig_session");
   redirect("/");
+}
+
+/** Chooses the company the lists follow. Only the person's own companies are accepted; everything else leaves the choice as it was. */
+export async function setCompany(f: FormData) {
+  const uid = await currentUserId(), value = str(f, "company"), jar = await cookies();
+  if (value === ALL_COMPANIES) jar.delete(COMPANY_COOKIE);
+  else if ((await myCompanies(uid)).some((c) => c.id === value)) jar.set(COMPANY_COOKIE, value, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/" });
+  else redirect(`/?err=${encodeURIComponent("You do not have access to that company.")}`);
+  revalidatePath("/", "layout");
 }
 
 // ---------- Payment requests ----------

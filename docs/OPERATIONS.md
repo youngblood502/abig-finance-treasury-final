@@ -21,6 +21,10 @@ Agreed decision: these become Paid at go-live. No migration does this, so it nev
 `psql "$MIGRATION_DATABASE_URL" -c "SELECT mark_authenticated_paid_at_go_live('<user id>', 'Test data, marked Paid at go-live')"`
 It moves no money (they were debited when authenticated), it is written to the audit trail, and the status is final. Run it only once real payments have not started: afterwards every authenticated request is treated as paid.
 
+## Choosing a company
+
+Someone with more than one company picks one, or "All my companies", at the top of the page. Lists, totals, reports and exports follow the choice. It only narrows what they see: the choice is checked on every request against their own companies, and row-level security still decides what is visible. An account shared with the chosen company is shown whole, because it has one balance.
+
 ## The weekly cycle
 
 Run the go-live step above before the first Monday opening. From then on each account runs in weeks, Monday to Sunday, in Addis Ababa time.

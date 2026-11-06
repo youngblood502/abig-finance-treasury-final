@@ -1,14 +1,16 @@
 import { Flash } from "@/components";
 import { addBankDetail, addSupplier, linkSupplier, rejectBankDetail, updateSupplier, verifyBankDetail } from "../actions";
 import { withUser } from "@/lib/db";
+import { companyScope } from "@/lib/company-scope";
 import { can, requireAccess } from "@/lib/rbac";
 import { currentUserId, requireMe } from "@/lib/session";
 
 export default async function Suppliers({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams; const uid = await currentUserId(); const me = await requireMe();
   requireAccess(me, "/suppliers");
+  const company = await companyScope(uid);
   const d = await withUser(uid, async (tx) => {
-    const suppliers = await tx.q<any>("SELECT id, legal_name, tin, is_active FROM suppliers ORDER BY legal_name");
+    const suppliers = await tx.q<any>("SELECT id, legal_name, tin, is_active FROM suppliers WHERE $1::uuid IS NULL OR id IN (SELECT supplier_id FROM company_suppliers WHERE company_id = $1) ORDER BY legal_name", [company]);
     const banks = await tx.q<any>("SELECT id, supplier_id, version, bank_name, account_last4, status, created_by, rejection_reason FROM supplier_bank_details ORDER BY supplier_id, version DESC");
     const links = await tx.q<any>("SELECT cs.supplier_id, c.legal_name AS company, cs.status FROM company_suppliers cs JOIN companies c ON c.id = cs.company_id ORDER BY c.legal_name");
     const companies = (await tx.q<any>("SELECT id, legal_name AS name FROM company_directory() WHERE is_active"));

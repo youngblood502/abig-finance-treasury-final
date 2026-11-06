@@ -1,6 +1,8 @@
 import { Flash, ShortfallChip } from "@/components";
 import Link from "next/link";
 import { grantAccess, registerAccount, revokeAccess, setAccountPolicy, setDepositAlert } from "../actions";
+import { accountInCompany } from "@/lib/company";
+import { companyScope } from "@/lib/company-scope";
 import { ACCOUNT_KINDS, accountPlace, ANOMALIES, dtime, ENTRY_KINDS, etb } from "@/lib/format";
 import { withUser } from "@/lib/db";
 import { requireAccess } from "@/lib/rbac";
@@ -9,6 +11,7 @@ import { currentUserId, requireMe, hasPermission } from "@/lib/session";
 export default async function Accounts({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams; const uid = await currentUserId(); const me = await requireMe();
   requireAccess(me, "/accounts");
+  const company = await companyScope(uid);
   const d = await withUser(uid, async (tx) => {
     // Who may update or manage an account is decided in the database (app_can_snapshot / app_can_manage_access).
     const accounts = await tx.q<any>(
@@ -17,7 +20,7 @@ export default async function Accounts({ searchParams }: { searchParams: Promise
               o.id AS owner_company_id, o.legal_name AS owner,
               app_can_snapshot(a.id) AS can_update, app_can_manage_access(a.id) AS can_manage
          FROM company_bank_accounts a LEFT JOIN banks b ON b.id = a.bank_id LEFT JOIN companies o ON o.id = account_owner_company(a.id)
-        ORDER BY a.account_label`);
+        WHERE ${accountInCompany("a.id", "$1")} ORDER BY a.account_label`, [company]);
     for (const a of accounts) {
       a.users = await tx.q<any>("SELECT g.id, c.legal_name AS name, g.is_owner, g.permissions FROM company_bank_account_access g JOIN companies c ON c.id = g.company_id WHERE g.account_id = $1 AND g.revoked_at IS NULL ORDER BY g.is_owner DESC, c.legal_name", [a.id]);
       a.history = await tx.q<any>("SELECT * FROM account_balance_history($1, 10)", [a.id]);

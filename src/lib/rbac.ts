@@ -27,6 +27,7 @@ export const MODULES: Module[] = [
   { path: "/suppliers", label: "Suppliers", nav: true, allow: (me) => can(me, "supplier:view"), why: "Your role cannot see suppliers." },
   { path: "/payees", label: "People", nav: true, allow: (me) => can(me, "payee:view"), why: "Your role cannot see people who are paid." },
   { path: "/reports", label: "Reports", nav: true, allow: (me) => can(me, "report:view") || me.groupReport, why: "Your role cannot see reports." },
+  { path: "/gallery", label: "Component gallery", nav: false, allow: (me) => me.isAdmin || process.env.NODE_ENV !== "production", why: "The component gallery is for administrators." },
   { path: "/admin", label: "Administration", nav: true, allow: (me) => me.isAdmin, why: "Only system administrators can use administration." },
 ];
 const moduleFor = (path: string) => MODULES.find((m) => m.path === "/" ? path === "/" : path === m.path || path.startsWith(m.path + "/"));
