@@ -11,6 +11,7 @@ import { assertCan } from "@/lib/rbac";
 import * as t from "@/lib/treasury";
 import { ALL_COMPANIES } from "@/lib/company";
 import { COMPANY_COOKIE, myCompanies } from "@/lib/company-scope";
+import { statementReturnPath } from "@/lib/reconciliation";
 import { PERSON_DETAIL_FOR_METHOD, protectIdNumber } from "@/lib/payees";
 import { runWorkflow, type WorkflowAction } from "@/lib/workflow";
 
@@ -138,7 +139,7 @@ export async function undoTick(f: FormData) {
 }
 export async function startReconciliation(f: FormData) {
   const accountId = str(f, "account");
-  return act(`/treasury/${accountId}`, "Statement figures saved.", guard(["reconciliation:prepare"], (uid) => t.startReconciliation(uid, { accountId, week: str(f, "week"), closing: num(f, "closing"), deposits: num(f, "deposits") })));
+  return act(statementReturnPath(accountId, str(f, "return_week")), "Statement figures saved.", guard(["reconciliation:prepare"], (uid) => t.startReconciliation(uid, { accountId, week: str(f, "week"), closing: num(f, "closing"), deposits: num(f, "deposits") })));
 }
 const week = (f: FormData) => `/treasury/week/${str(f, "week")}`;
 export async function matchPayment(f: FormData) {

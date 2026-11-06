@@ -83,7 +83,7 @@ export default async function TreasuryAccount({ params, searchParams }: { params
           ))}</ul>
         )}
       </Card>
-      <Card title="Balance log"><BalanceLog entries={d.log} access={access} /></Card>
+      <Card title="Balance log"><BalanceLog entries={d.log} access={access} limit={100} /></Card>
     </>
   );
 }
