@@ -25,5 +25,8 @@ export function tableView<T extends TableRow>(rows: T[], q: TableQuery) {
   }).map((s) => s.row);
   const pages = Math.max(1, Math.ceil(sorted.length / q.pageSize));
   const page = Math.min(Math.max(q.page, 1), pages);
-  return { rows: sorted.slice((page - 1) * q.pageSize, page * q.pageSize), total: sorted.length, page, pages };
+  return { rows: sorted.slice((page - 1) * q.pageSize, page * q.pageSize), matched: sorted, total: sorted.length, page, pages };
 }
+
+/** The sum of a numeric sort value over the rows given, in whole cents so it cannot drift. */
+export const sumRows = (rows: TableRow[], key: string) => rows.reduce((s, r) => s + Math.round(Number(r.sort?.[key] ?? 0) * 100), 0) / 100;

@@ -2,7 +2,8 @@
 import * as React from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { tableView, type TableRow } from "@/lib/table";
+import { etb } from "@/lib/format";
+import { sumRows, tableView, type TableRow } from "@/lib/table";
 import { cn } from "@/lib/utils";
 
 export interface DataColumn { key: string; header: string; align?: "left" | "right"; sortable?: boolean; /** On a phone, this cell is the card's title. */ primary?: boolean }
@@ -12,16 +13,17 @@ export interface DataFilter { key: string; label: string; options: { value: stri
 
 export interface DataTableProps {
   caption: string; columns: DataColumn[]; rows: DataRow[]; filters?: DataFilter[]; searchable?: boolean; pageSize?: number;
-  totals?: Record<string, React.ReactNode>; emptyMessage?: string;
+  totals?: Record<string, React.ReactNode>; /** Money columns totalled from the rows left after searching and filtering, using each row's numeric `sort` value. Use this when the table can filter. */ sumColumns?: string[]; emptyMessage?: string;
 }
 
 /** A table on a wider screen, stacked cards on a phone. Sorts, searches, filters and pages the rows it was given, in the browser. */
-export function DataTable({ caption, columns, rows, filters = [], searchable = false, pageSize = 25, totals, emptyMessage = "Nothing here yet." }: DataTableProps) {
+export function DataTable({ caption, columns, rows, filters = [], searchable = false, pageSize = 25, totals: fixedTotals, sumColumns = [], emptyMessage = "Nothing here yet." }: DataTableProps) {
   const [query, setQuery] = React.useState("");
   const [chosen, setChosen] = React.useState<Record<string, string>>({});
   const [sort, setSort] = React.useState<{ key: string | null; descending: boolean }>({ key: null, descending: false });
   const [page, setPage] = React.useState(1);
   const view = tableView(rows, { query, filters: chosen, sortKey: sort.key, descending: sort.descending, page, pageSize });
+  const totals = sumColumns.length > 0 ? { ...fixedTotals, ...Object.fromEntries(sumColumns.map((k) => [k, etb(sumRows(view.matched, k))])) } : fixedTotals;
   const toggleSort = (key: string) => { setSort((s) => (s.key === key ? { key, descending: !s.descending } : { key, descending: false })); setPage(1); };
   const primary = columns.find((c) => c.primary) ?? columns[0];
   const narrowed = query.trim() !== "" || Object.values(chosen).some(Boolean);

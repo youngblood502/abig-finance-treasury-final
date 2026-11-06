@@ -1,65 +1,89 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Flash, ShortfallChip } from "@/components";
-import { recordFigure, startReconciliation, undoTick } from "../../actions";
-import { ANOMALIES, dstr, dtime, ENTRY_KINDS, etb, etbOrBlank, PAYMENT_METHODS, PRIVATE_LOG_NOTE, WEEK_STATUS } from "@/lib/format";
+import { startReconciliation, undoTick } from "../../actions";
+import { BalanceCheckForm } from "@/components/treasury/balance-check-form";
+import { BalanceLog } from "@/components/treasury/balance-log";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatGrid, StatTile } from "@/components/ui/stat-tile";
+import { SubmitButton } from "@/components/ui/submit-button";
+import { RESERVED_LABEL, SHARED_RESERVED_HINT } from "@/lib/dashboard";
 import { withUser } from "@/lib/db";
+import { dstr, etb, PAYMENT_METHODS, WEEK_STATUS } from "@/lib/format";
 import { requireAccess } from "@/lib/rbac";
 import { currentUserId, requireMe } from "@/lib/session";
+import { ACCESS_NOTE, accountDetail, outstandingScope, startsTicked, type OutstandingRow } from "@/lib/treasury-screens";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const Card = ({ title, children }: { title: string; children: React.ReactNode }) => <section className="mb-3 rounded-xl border bg-card p-4"><h2 className="mt-0">{title}</h2>{children}</section>;
+const PaymentLine = ({ p, action }: { p: OutstandingRow; action?: React.ReactNode }) => (
+  <li className="flex flex-wrap items-center justify-between gap-2 border-t py-2 text-sm first:border-t-0">
+    <span className="min-w-0"><b>{p.request_no}</b> <span className="text-muted-foreground">{p.company}</span>{p.overdue && <Badge variant="destructive" className="ml-2">{p.age_days} days</Badge>}
+      <span className="block text-xs text-muted-foreground">{p.payee ?? "Payee not shown"} · {PAYMENT_METHODS[p.method]}</span></span>
+    <span className="flex items-center gap-2"><span className="font-semibold tabular-nums">{etb(p.amount)}</span>{action}</span>
+  </li>
+);
 
 export default async function TreasuryAccount({ params, searchParams }: { params: Promise<{ account: string }>; searchParams: Promise<Record<string, string | undefined>> }) {
   const { account } = await params; const sp = await searchParams; const uid = await currentUserId(); const me = await requireMe();
   requireAccess(me, "/treasury");
   if (!UUID.test(account)) notFound();
-  const d = await withUser(uid, async (tx) => ({
-    status: (await tx.q<any>("SELECT * FROM account_week_status() WHERE account_id = $1", [account]))[0],
-    access: (await tx.q<{ level: string }>("SELECT app_account_access($1) AS level", [account]))[0].level,
-    account: (await tx.q<any>("SELECT account_kind::text AS account_kind, current_balance, reserved_balance, shortfall_amount FROM company_bank_accounts WHERE id = $1", [account]))[0],
-    payments: await tx.q<any>("SELECT * FROM outstanding_payments($1)", [account]),
-    log: await tx.q<any>("SELECT * FROM account_balance_history($1, 50)", [account]),
-    weeks: await tx.q<any>("SELECT id, week_start, status::text AS status, opening_entry_id FROM treasury_weeks WHERE account_id = $1 ORDER BY week_start DESC LIMIT 12", [account]),
-  }));
-  if (!d.status || !d.account) notFound();
-  const s = d.status, opening = !s.has_opening, kind = d.account.account_kind;
-  const waiting = d.payments.filter((p: any) => !p.processed_at), ticked = d.payments.filter((p: any) => p.processed_at && p.method !== "CASH");
-  const place = kind === "CASH" ? "Cash counted" : kind === "WALLET" ? "Amount in the wallet" : "Amount the bank shows";
+  // An account this person cannot see does not exist for them. What they get on one they can see comes from the database.
+  const d = await withUser(uid, (tx) => accountDetail(tx, account));
+  if (!d) notFound();
+  const { status: s, facts: a, access } = d, shared = a.companies.length > 1, opening = !s.has_opening;
+  const waiting = d.payments.filter((p) => !p.processed_at), ticked = d.payments.filter((p) => p.processed_at && p.method !== "CASH");
+  const place = a.account_kind === "CASH" ? "Cash counted" : a.account_kind === "WALLET" ? "Amount in the wallet" : "Amount the bank shows";
   return (
     <>
-      <p className="mute"><Link href="/treasury">Weekly treasury</Link></p>
-      <h1>{s.account_label}</h1><p className="sub">Week of {dstr(s.week_start)}. System balance {etb(d.account.current_balance)}, reserved {etb(d.account.reserved_balance)}.</p><Flash sp={sp} />
-      <ShortfallChip amount={d.account.shortfall_amount} />
+      <p className="mute mb-2"><Link href="/treasury">Weekly treasury</Link> / {s.account_label}</p>
+      <PageHeader title={s.account_label} description={`Week of ${dstr(s.week_start)}, ${WEEK_STATUS[s.status].toLowerCase()}. Legal owner: ${a.owner ?? "none"}.`} action={shared ? <Badge variant="outline">Shared with {a.companies.length - 1} other{a.companies.length === 2 ? "" : "s"}</Badge> : undefined} />
+      <Flash sp={sp} />
+      <ShortfallChip amount={a.shortfall_amount} />
+      <StatGrid>
+        <StatTile label="System balance" value={etb(a.current_balance)} hint={shared ? "One balance for every company on this account" : undefined} />
+        <StatTile label={RESERVED_LABEL.replace("these accounts", "this account")} value={etb(a.reserved_balance)} hint={shared ? SHARED_RESERVED_HINT.replace("them", "it").replace("Account totals", "The account's total") : undefined} />
+        <StatTile label="Available" value={etb(a.available_balance)} hint={`After the minimum buffer of ${etb(a.min_buffer)}`} />
+        <StatTile label="Outstanding you can see" value={etb(d.payments.reduce((t, p) => t + Number(p.amount), 0))} hint={`${d.payments.length} payment${d.payments.length === 1 ? "" : "s"}. ${outstandingScope(access, shared)}`} />
+      </StatGrid>
+      {shared && ACCESS_NOTE[access] && <p className="mute">{ACCESS_NOTE[access]}</p>}
+
       {s.can_check && (
-        <form action={recordFigure} className="card"><h2 style={{ marginTop: 0 }}>{opening ? "Opening balance for this week" : "Balance check"}</h2>
-          <input type="hidden" name="account" value={account} /><input type="hidden" name="opening" value={opening ? "1" : "0"} />
-          <label className="f">{place} (ETB)<input name="figure" type="number" step="0.01" min="0" required /></label>
-          {waiting.length > 0 && <div className="scroll"><p className="mute">Tick the payments the bank has processed. The rest are subtracted from the figure.</p>
-            <table><thead><tr><th>Processed</th><th>Payment</th><th>Company</th><th>Payee</th><th>Method</th><th className="n">Amount</th></tr></thead>
-              <tbody>{waiting.map((p: any) => (
-                <tr key={p.id}><td><input type="hidden" name="shown" value={p.id} /><input type="checkbox" name="processed" value={p.id} defaultChecked={p.default_processed} aria-label={`${p.request_no} processed`} /></td>
-                  <td>{p.request_no}{p.carried && <span className="chip o">Carried over</span>}{p.overdue && <span className="chip b">{p.age_days} days</span>}</td><td>{p.company}</td><td>{p.payee ?? <span className="mute">Not shown</span>}</td><td>{PAYMENT_METHODS[p.method]}{p.cheque_no ? ` ${p.cheque_no}` : ""}</td><td className="n">{etb(p.amount)}</td></tr>))}</tbody></table></div>}
-          <button style={{ marginTop: 10 }}>{opening ? "Record opening balance" : "Save balance check"}</button>
-        </form>)}
-      {!s.can_check && waiting.length > 0 && <div className="card scroll"><h2 style={{ marginTop: 0 }}>Outstanding payments</h2><table><tbody>{waiting.map((p: any) => (
-        <tr key={p.id}><td>{p.request_no}{p.overdue && <span className="chip b">{p.age_days} days</span>}</td><td>{p.company}</td><td>{PAYMENT_METHODS[p.method]}</td><td className="n">{etb(p.amount)}</td></tr>))}</tbody></table></div>}
-      {s.can_check && ticked.length > 0 && <div className="card scroll"><h2 style={{ marginTop: 0 }}>Ticked as processed, not yet on a statement</h2><table><tbody>{ticked.map((p: any) => (
-        <tr key={p.id}><td>{p.request_no}</td><td>{p.company}</td><td className="n">{etb(p.amount)}</td><td><form action={undoTick} className="inline"><input type="hidden" name="id" value={p.id} /><input type="hidden" name="account" value={account} /><input name="reason" placeholder="Reason" aria-label="Reason to undo" required /><button className="sec">Undo tick</button></form></td></tr>))}</tbody></table></div>}
+        // The key starts the form again when the list changes, so ticks always begin from each payment's default.
+        <BalanceCheckForm key={waiting.map((p) => p.id).join()} accountId={account} opening={opening} hadOpening={d.hadOpening} fieldLabel={`${place} (ETB)`} previous={Number(a.current_balance)} reserved={Number(a.reserved_balance)} threshold={Number(a.large_deposit_threshold)}
+          payments={waiting.map((p) => ({ id: p.id, requestNo: p.request_no, company: p.company, payee: p.payee, method: p.method, amount: Number(p.amount), chequeNo: p.cheque_no, carried: p.carried, overdue: p.overdue, ageDays: p.age_days, startsTicked: startsTicked(p), tickUndone: p.tick_undone }))} />
+      )}
+      {!s.can_check && waiting.length > 0 && <Card title="Outstanding payments"><ul className="m-0 list-none p-0">{waiting.map((p) => <PaymentLine key={p.id} p={p} />)}</ul></Card>}
+      {ticked.length > 0 && (
+        <Card title="Ticked as processed, not yet on a statement">
+          <ul className="m-0 list-none p-0">{ticked.map((p) => (
+            <PaymentLine key={p.id} p={p} action={s.can_check && (
+              <ConfirmDialog title={`Undo the tick on ${p.request_no}?`} description="This payment stays unticked on later balance checks until someone ticks it again. The balance does not change until the next check." confirmLabel="Undo tick" cancelLabel="Keep it"
+                action={undoTick} fields={{ id: p.id, account }} trigger={<Button variant="outline" size="sm">Undo tick</Button>}>
+                <label className="f">Reason<textarea name="reason" rows={2} required minLength={3} /></label>
+              </ConfirmDialog>)} />
+          ))}</ul>
+        </Card>
+      )}
 
-      <h2>Weeks</h2>
-      <div className="card scroll"><table><tbody>{d.weeks.map((w: any) => (
-        <tr key={w.id}><td>{dstr(w.week_start)}</td><td>{w.status === "OPEN" ? WEEK_STATUS.OPEN : <Link href={`/treasury/week/${w.id}`}>{WEEK_STATUS[w.status]}</Link>}</td>
-          <td>{w.status === "OPEN" && w.opening_entry_id && s.can_prepare && (
-            <form action={startReconciliation} className="inline"><input type="hidden" name="account" value={account} /><input type="hidden" name="week" value={dstr(w.week_start)} />
-              <label className="f">Statement closing balance<input name="closing" type="number" step="0.01" min="0" required /></label><label className="f">Statement deposits<input name="deposits" type="number" step="0.01" min="0" required /></label><button>Start reconciliation</button></form>)}</td></tr>))}</tbody></table>
-        {d.weeks.length === 0 && <p className="mute">No weeks yet.</p>}</div>
-
-      <h2>Balance log</h2>
-      <div className="card scroll"><table><thead><tr><th>When</th><th>Entry</th><th className="n">Bank figure</th><th className="n">Not yet processed</th><th className="n">Previous</th><th className="n">System balance</th><th className="n">Implied deposit</th><th>By</th></tr></thead>
-        <tbody>{d.log.map((h: any) => (
-          <tr key={h.id}><td>{dtime(h.updated_at)}</td><td>{h.request_no ? `Payment ${h.request_no}` : ENTRY_KINDS[h.entry_kind]}{h.anomalies.map((x: string) => <span className="chip w" key={x}>{ANOMALIES[x]}</span>)}</td>
-            <td className="n">{etbOrBlank(h.bank_figure)}</td><td className="n">{etbOrBlank(h.outstanding_total)}</td><td className="n">{etbOrBlank(h.previous_balance)}</td><td className="n">{etb(h.new_balance)}</td><td className="n">{etbOrBlank(h.implied_deposit)}</td><td>{h.updated_by_name}</td></tr>))}</tbody></table>
-        {d.access === "NONE" && <p className="mute">{PRIVATE_LOG_NOTE}</p>}</div>
+      <Card title="Weeks">
+        {d.weeks.length === 0 ? <p className="m-0 text-sm text-muted-foreground">No weeks yet.</p> : (
+          <ul className="m-0 list-none p-0">{d.weeks.map((w) => (
+            <li key={w.id} className="flex flex-wrap items-end justify-between gap-3 border-t py-2 text-sm first:border-t-0">
+              <span>{dstr(w.week_start)}, {w.status === "OPEN" ? WEEK_STATUS.OPEN.toLowerCase() : <Link href={`/treasury/week/${w.id}`}>{WEEK_STATUS[w.status].toLowerCase()}</Link>}</span>
+              {w.status === "OPEN" && w.opening_entry_id && s.can_prepare && (
+                <form action={startReconciliation} className="flex flex-wrap items-end gap-2"><input type="hidden" name="account" value={account} /><input type="hidden" name="week" value={dstr(w.week_start)} />
+                  <label className="f">Statement closing balance<input name="closing" type="number" step="0.01" min="0" required /></label><label className="f">Statement deposits<input name="deposits" type="number" step="0.01" min="0" required /></label>
+                  <SubmitButton variant="outline">Start reconciliation</SubmitButton></form>
+              )}
+            </li>
+          ))}</ul>
+        )}
+      </Card>
+      <Card title="Balance log"><BalanceLog entries={d.log} access={access} /></Card>
     </>
   );
 }
