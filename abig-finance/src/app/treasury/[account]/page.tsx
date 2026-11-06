@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Flash, ShortfallChip } from "@/components";
 import { recordFigure, startReconciliation, undoTick } from "../../actions";
-import { ANOMALIES, dstr, dtime, ENTRY_KINDS, etb, PAYMENT_METHODS, WEEK_STATUS } from "@/lib/format";
+import { ANOMALIES, dstr, dtime, ENTRY_KINDS, etb, etbOrBlank, PAYMENT_METHODS, PRIVATE_LOG_NOTE, WEEK_STATUS } from "@/lib/format";
 import { withUser } from "@/lib/db";
 import { requireAccess } from "@/lib/rbac";
 import { currentUserId, requireMe } from "@/lib/session";
@@ -15,6 +15,7 @@ export default async function TreasuryAccount({ params, searchParams }: { params
   if (!UUID.test(account)) notFound();
   const d = await withUser(uid, async (tx) => ({
     status: (await tx.q<any>("SELECT * FROM account_week_status() WHERE account_id = $1", [account]))[0],
+    access: (await tx.q<{ level: string }>("SELECT app_account_access($1) AS level", [account]))[0].level,
     account: (await tx.q<any>("SELECT account_kind::text AS account_kind, current_balance, reserved_balance, shortfall_amount FROM company_bank_accounts WHERE id = $1", [account]))[0],
     payments: await tx.q<any>("SELECT * FROM outstanding_payments($1)", [account]),
     log: await tx.q<any>("SELECT * FROM account_balance_history($1, 50)", [account]),
@@ -37,7 +38,7 @@ export default async function TreasuryAccount({ params, searchParams }: { params
             <table><thead><tr><th>Processed</th><th>Payment</th><th>Company</th><th>Payee</th><th>Method</th><th className="n">Amount</th></tr></thead>
               <tbody>{waiting.map((p: any) => (
                 <tr key={p.id}><td><input type="hidden" name="shown" value={p.id} /><input type="checkbox" name="processed" value={p.id} defaultChecked={p.default_processed} aria-label={`${p.request_no} processed`} /></td>
-                  <td>{p.request_no}{p.carried && <span className="chip o">Carried over</span>}{p.overdue && <span className="chip b">{p.age_days} days</span>}</td><td>{p.company}</td><td>{p.payee}</td><td>{PAYMENT_METHODS[p.method]}{p.cheque_no ? ` ${p.cheque_no}` : ""}</td><td className="n">{etb(p.amount)}</td></tr>))}</tbody></table></div>}
+                  <td>{p.request_no}{p.carried && <span className="chip o">Carried over</span>}{p.overdue && <span className="chip b">{p.age_days} days</span>}</td><td>{p.company}</td><td>{p.payee ?? <span className="mute">Not shown</span>}</td><td>{PAYMENT_METHODS[p.method]}{p.cheque_no ? ` ${p.cheque_no}` : ""}</td><td className="n">{etb(p.amount)}</td></tr>))}</tbody></table></div>}
           <button style={{ marginTop: 10 }}>{opening ? "Record opening balance" : "Save balance check"}</button>
         </form>)}
       {!s.can_check && waiting.length > 0 && <div className="card scroll"><h2 style={{ marginTop: 0 }}>Outstanding payments</h2><table><tbody>{waiting.map((p: any) => (
@@ -57,7 +58,8 @@ export default async function TreasuryAccount({ params, searchParams }: { params
       <div className="card scroll"><table><thead><tr><th>When</th><th>Entry</th><th className="n">Bank figure</th><th className="n">Not yet processed</th><th className="n">Previous</th><th className="n">System balance</th><th className="n">Implied deposit</th><th>By</th></tr></thead>
         <tbody>{d.log.map((h: any) => (
           <tr key={h.id}><td>{dtime(h.updated_at)}</td><td>{h.request_no ? `Payment ${h.request_no}` : ENTRY_KINDS[h.entry_kind]}{h.anomalies.map((x: string) => <span className="chip w" key={x}>{ANOMALIES[x]}</span>)}</td>
-            <td className="n">{h.bank_figure === null ? "" : etb(h.bank_figure)}</td><td className="n">{h.outstanding_total === null ? "" : etb(h.outstanding_total)}</td><td className="n">{etb(h.previous_balance)}</td><td className="n">{etb(h.new_balance)}</td><td className="n">{h.implied_deposit === null ? "" : etb(h.implied_deposit)}</td><td>{h.updated_by_name}</td></tr>))}</tbody></table></div>
+            <td className="n">{etbOrBlank(h.bank_figure)}</td><td className="n">{etbOrBlank(h.outstanding_total)}</td><td className="n">{etbOrBlank(h.previous_balance)}</td><td className="n">{etb(h.new_balance)}</td><td className="n">{etbOrBlank(h.implied_deposit)}</td><td>{h.updated_by_name}</td></tr>))}</tbody></table>
+        {d.access === "NONE" && <p className="mute">{PRIVATE_LOG_NOTE}</p>}</div>
     </>
   );
 }
