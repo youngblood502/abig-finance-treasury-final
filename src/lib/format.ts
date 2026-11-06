@@ -26,6 +26,10 @@ export const STATE_LABEL: Record<string, string> = {
   DRAFT: "Draft", SCHEDULED: "Scheduled", RESERVED: "Funds reserved, waiting for verification", VERIFIED: "Verified, waiting for authentication",
   AUTHENTICATED: "Authenticated, not yet paid", PAID: "Paid", REJECTED: "Rejected", CANCELLED: "Cancelled",
 };
+/** One short label per status, used on badges. */
+export const STATUS_SHORT: Record<string, string> = { DRAFT: "Draft", SCHEDULED: "Scheduled", RESERVED: "Reserved", VERIFIED: "Verified", AUTHENTICATED: "Authenticated", PAID: "Paid", REJECTED: "Rejected", CANCELLED: "Cancelled" };
+/** One colour per status, the same everywhere. */
+export const statusTone = (state: string): "secondary" | "warning" | "destructive" | "outline" => (state === "PAID" ? "secondary" : state === "REJECTED" || state === "CANCELLED" ? "destructive" : state === "AUTHENTICATED" ? "warning" : "outline");
 export const PAYMENT_METHODS: Record<string, string> = { TRANSFER: "Transfer", CHEQUE: "Cheque", CASH: "Cash", TELEBIRR: "Telebirr" };
 /** The methods each kind of account can pay with. The database enforces the same rule. */
 export const METHODS_FOR_KIND: Record<string, string[]> = { BANK: ["TRANSFER", "CHEQUE"], WALLET: ["TELEBIRR"], CASH: ["CASH"] };
