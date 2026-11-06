@@ -23,6 +23,9 @@ export const PAYMENT_METHODS: Record<string, string> = { TRANSFER: "Transfer", C
 export const METHODS_FOR_KIND: Record<string, string[]> = { BANK: ["TRANSFER", "CHEQUE"], WALLET: ["TELEBIRR"], CASH: ["CASH"] };
 export const ENTRY_KINDS: Record<string, string> = { OPENING: "Opening balance", CHECK: "Balance check", PAYMENT: "Payment", CANCEL_RELEASE: "Cancellation", RECONCILIATION_ADJUSTMENT: "Reconciliation adjustment" };
 export const ANOMALIES: Record<string, string> = { NEGATIVE_DEPOSIT: "Money left that the system does not know about", LARGE_DEPOSIT: "Large deposit", OPENING_CHANGED: "Balance changed between weeks" };
+/** For a value the database holds back from this person, or that an old entry never had: empty, never a misleading ETB 0.00. */
+export const etbOrBlank = (v: unknown) => (v === null || v === undefined ? "" : etb(v));
+export const PRIVATE_LOG_NOTE = "This account is shared. Other companies' payments are not listed, so the balance can change between entries.";
 export const WEEK_STATUS: Record<string, string> = { OPEN: "Open", RECONCILING: "Being reconciled", LOCKED: "Locked" };
 export const ACCOUNT_KINDS: Record<string, string> = { BANK: "Bank account", WALLET: "Telebirr wallet", CASH: "Cash" };
 /** Where an account's money is: its bank and last four digits, its wallet phone, or plain cash. */

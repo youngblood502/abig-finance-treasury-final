@@ -25,6 +25,10 @@ It moves no money (they were debited when authenticated), it is written to the a
 
 Someone with more than one company picks one, or "All my companies", at the top of the page. Lists, totals, reports and exports follow the choice. It only narrows what they see: the choice is checked on every request against their own companies, and row-level security still decides what is visible. An account shared with the chosen company is shown whole, because it has one balance.
 
+## Shared accounts and privacy
+
+A shared account has one balance, and each payment on it belongs to one company. Finance staff of the company that owns the account see everything, because they reconcile it. Others who may enter its balance see a payment's number, company, method and amount, so they can tick it, but not who it pays. Everyone else sees the balance and their own company's payments; other companies' payments are left out of the log. Group reporting on the owner company does not widen this. The balance itself cannot be hidden from those who share it, so anyone who sees it at two moments can work out the net change.
+
 ## The weekly cycle
 
 Run the go-live step above before the first Monday opening. From then on each account runs in weeks, Monday to Sunday, in Addis Ababa time.

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { grantAccess, registerAccount, revokeAccess, setAccountPolicy, setDepositAlert } from "../actions";
 import { accountInCompany } from "@/lib/company";
 import { companyScope } from "@/lib/company-scope";
-import { ACCOUNT_KINDS, accountPlace, ANOMALIES, dtime, ENTRY_KINDS, etb } from "@/lib/format";
+import { ACCOUNT_KINDS, accountPlace, ANOMALIES, dtime, ENTRY_KINDS, etb, etbOrBlank, PRIVATE_LOG_NOTE } from "@/lib/format";
 import { withUser } from "@/lib/db";
 import { requireAccess } from "@/lib/rbac";
 import { currentUserId, requireMe, hasPermission } from "@/lib/session";
@@ -18,7 +18,7 @@ export default async function Accounts({ searchParams }: { searchParams: Promise
       `SELECT a.id, a.account_label, a.account_kind::text AS account_kind, a.wallet_phone, b.name AS bank_name, a.account_last4, a.min_buffer, a.large_deposit_threshold, a.is_active,
               a.current_balance, a.reserved_balance, a.available_balance, a.shortfall_amount, a.balance_updated_at,
               o.id AS owner_company_id, o.legal_name AS owner,
-              app_can_snapshot(a.id) AS can_update, app_can_manage_access(a.id) AS can_manage
+              app_can_snapshot(a.id) AS can_update, app_can_manage_access(a.id) AS can_manage, app_account_access(a.id) AS access
          FROM company_bank_accounts a LEFT JOIN banks b ON b.id = a.bank_id LEFT JOIN companies o ON o.id = account_owner_company(a.id)
         WHERE ${accountInCompany("a.id", "$1")} ORDER BY a.account_label`, [company]);
     for (const a of accounts) {
@@ -62,8 +62,9 @@ export default async function Accounts({ searchParams }: { searchParams: Promise
           <details style={{ marginTop: 10 }}><summary>Balance history</summary>
             {a.history.length === 0 ? <p className="mute">No balance updates yet.</p> : (
               <div className="scroll"><table><thead><tr><th>When</th><th className="n">Previous</th><th className="n">New</th><th>Reason</th><th className="n">Implied deposit</th><th>By</th></tr></thead>
-                <tbody>{a.history.map((h: any) => <tr key={h.id}><td>{dtime(h.updated_at)}</td><td className="n">{etb(h.previous_balance)}</td><td className="n">{etb(h.new_balance)}</td><td>{h.request_no ? `Payment ${h.request_no}` : ENTRY_KINDS[h.entry_kind]}{h.anomalies.map((x: string) => <span className="chip w" key={x}>{ANOMALIES[x]}</span>)}</td><td className="n">{h.implied_deposit === null ? "" : etb(h.implied_deposit)}</td><td>{h.updated_by_name}</td></tr>)}</tbody></table></div>)}
+                <tbody>{a.history.map((h: any) => <tr key={h.id}><td>{dtime(h.updated_at)}</td><td className="n">{etbOrBlank(h.previous_balance)}</td><td className="n">{etb(h.new_balance)}</td><td>{h.request_no ? `Payment ${h.request_no}` : ENTRY_KINDS[h.entry_kind]}{h.anomalies.map((x: string) => <span className="chip w" key={x}>{ANOMALIES[x]}</span>)}</td><td className="n">{etbOrBlank(h.implied_deposit)}</td><td>{h.updated_by_name}</td></tr>)}</tbody></table></div>)}
             {a.history.length === 10 && <p className="mute">The 10 most recent updates are shown.</p>}
+            {a.access === "NONE" && <p className="mute">{PRIVATE_LOG_NOTE}</p>}
           </details>
           {a.can_manage && (
             <details style={{ marginTop: 10 }}><summary>Manage this account</summary>
