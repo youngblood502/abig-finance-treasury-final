@@ -1,0 +1,59 @@
+/*
+ * The ABIG colours, in one place, for both themes. Names follow shadcn/ui, so its components work unchanged.
+ * tests/theme.test.ts measures the contrast of every text and background pair: keep values as six-digit hex.
+ *
+ *   #7AC143 is the green of the ABIG logo. It is too light for white text, so in the light theme the
+ *   brand colour is the deep green #2F7A33; in the dark theme the logo green carries dark text.
+ */
+:root {
+  --background: #ffffff;
+  --foreground: #16261b;
+  --card: #f5f8f2;
+  --card-foreground: #16261b;
+  --popover: #ffffff;
+  --popover-foreground: #16261b;
+  --primary: #2f7a33;
+  --primary-foreground: #ffffff;
+  --secondary: #ecf1e8;
+  --secondary-foreground: #16261b;
+  --muted: #ecf1e8;
+  --muted-foreground: #526357;
+  --accent: #e6f3d9;
+  --accent-foreground: #245f28;
+  --destructive: #b3261e;
+  --destructive-foreground: #ffffff;
+  --destructive-soft: #fbe4e2;
+  --warning: #92400e;
+  --warning-soft: #fdf1dc;
+  --border: #dce5d6;
+  --input: #728376;
+  --ring: #2f7a33;
+  --brand: #7ac143;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #0f1a12;
+  --foreground: #e7f0e8;
+  --card: #16241a;
+  --card-foreground: #e7f0e8;
+  --popover: #16241a;
+  --popover-foreground: #e7f0e8;
+  --primary: #7ac143;
+  --primary-foreground: #0f1a12;
+  --secondary: #1e3322;
+  --secondary-foreground: #e7f0e8;
+  --muted: #1e3322;
+  --muted-foreground: #a9bcad;
+  --accent: #1e3322;
+  --accent-foreground: #a9dc7d;
+  --destructive: #f1948e;
+  --destructive-foreground: #0f1a12;
+  --destructive-soft: #3b1d1b;
+  --warning: #f0b35c;
+  --warning-soft: #3a2e14;
+  --border: #25372a;
+  --input: #5f7666;
+  --ring: #7ac143;
+  --brand: #7ac143;
+}

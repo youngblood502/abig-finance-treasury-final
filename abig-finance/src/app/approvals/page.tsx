@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Flash } from "@/components";
 import { workflowAction } from "../actions";
 import { accountPlace, dstr, dtime, etb } from "@/lib/format";
+import { companyScope } from "@/lib/company-scope";
 import { withUser } from "@/lib/db";
 import { requireAccess } from "@/lib/rbac";
 import { currentUserId, requireMe, hasPermission } from "@/lib/session";
@@ -12,14 +13,16 @@ export default async function Approvals({ searchParams }: { searchParams: Promis
   requireAccess(me, "/approvals");
   // The database decides what is waiting for this person (app_actionable_requests): Finance Managers get RESERVED requests,
   // Owners get VERIFIED ones, never their own and never one they already handled at the other stage.
-  const rows = await withUser(await currentUserId(), (tx) => tx.q<any>(
+  const uid = await currentUserId(), company = await companyScope(uid);
+  const rows = await withUser(uid, (tx) => tx.q<any>(
     `SELECT a.*, c.legal_name AS company, COALESCE(s.legal_name, p.full_name) AS payee, u.full_name AS creator, vu.full_name AS verifier, r.verified_at,
             da.account_label, da.account_kind::text AS account_kind, da.wallet_phone, da.account_last4, dk.name AS bank_name, da.available_balance,
             EXISTS (SELECT 1 FROM attachments f WHERE f.request_id = a.request_id) AS has_document,
             (SELECT min(due_date) FROM payment_installments WHERE request_id = a.request_id) AS due
      FROM app_actionable_requests() a JOIN payment_requests r ON r.id = a.request_id JOIN companies c ON c.id = a.debtor_company_id
      LEFT JOIN suppliers s ON s.id = r.supplier_id LEFT JOIN person_payees p ON p.id = r.person_payee_id LEFT JOIN users u ON u.id = r.created_by LEFT JOIN users vu ON vu.id = r.verified_by
-     LEFT JOIN company_bank_accounts da ON da.id = r.debit_account_id LEFT JOIN banks dk ON dk.id = da.bank_id ORDER BY a.waiting_since`));
+     LEFT JOIN company_bank_accounts da ON da.id = r.debit_account_id LEFT JOIN banks dk ON dk.id = da.bank_id
+     WHERE ($1::uuid IS NULL OR a.debtor_company_id = $1) ORDER BY a.waiting_since`, [company]));
   const stages = (Object.keys(APPROVAL_STAGES) as ApprovalStage[]).filter((s) => hasPermission(me, APPROVAL_STAGES[s].permission));
   return (
     <>

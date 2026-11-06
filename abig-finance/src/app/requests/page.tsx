@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Flash, StateChip } from "@/components";
 import { dstr, etb, STATE_LABEL } from "@/lib/format";
+import { companyScope } from "@/lib/company-scope";
 import { withUser } from "@/lib/db";
 import { requireAccess } from "@/lib/rbac";
 import { currentUserId, requireMe, hasPermission } from "@/lib/session";
@@ -8,13 +9,13 @@ import { currentUserId, requireMe, hasPermission } from "@/lib/session";
 export default async function Requests({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams; const uid = await currentUserId(); const me = await requireMe();
   requireAccess(me, "/requests");
-  const state = sp.state && STATE_LABEL[sp.state] ? sp.state : null;
+  const state = sp.state && STATE_LABEL[sp.state] ? sp.state : null, company = await companyScope(uid);
   const rows = await withUser(uid, (tx) => tx.q<any>(
     `SELECT r.id, r.request_no, c.legal_name AS company, COALESCE(s.legal_name, p.full_name) AS payee, r.total_amount, r.workflow_state, r.priority, a.account_label AS account,
             (SELECT min(due_date) FROM payment_installments WHERE request_id = r.id) AS due
      FROM payment_requests r JOIN companies c ON c.id = r.debtor_company_id LEFT JOIN suppliers s ON s.id = r.supplier_id LEFT JOIN person_payees p ON p.id = r.person_payee_id
      LEFT JOIN company_bank_accounts a ON a.id = r.debit_account_id
-     WHERE ($1::text IS NULL OR r.workflow_state::text = $1) ORDER BY r.created_at DESC LIMIT 200`, [state]));
+     WHERE ($1::text IS NULL OR r.workflow_state::text = $1) AND ($2::uuid IS NULL OR r.debtor_company_id = $2) ORDER BY r.created_at DESC LIMIT 200`, [state, company]));
   return (
     <>
       <div className="row"><div><h1>Payment requests</h1><p className="sub">Requests from the companies you can see.</p></div>

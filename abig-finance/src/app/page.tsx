@@ -1,23 +1,26 @@
 import Link from "next/link";
 import { Flash, ShortfallChip } from "@/components";
 import { dtime, etb, accountPlace } from "@/lib/format";
+import { accountInCompany } from "@/lib/company";
+import { companyScope } from "@/lib/company-scope";
 import { withUser } from "@/lib/db";
 import { canAccess } from "@/lib/rbac";
 import { currentUserId, requireMe } from "@/lib/session";
 
 export default async function Dashboard({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams; const uid = await currentUserId(); const me = await requireMe();
+  const company = await companyScope(uid);
   const showRequests = canAccess(me, "/requests"), showAccounts = canAccess(me, "/accounts"), showApprovals = canAccess(me, "/approvals");
   // Everything below is read through row-level security, so each person sees only the companies and accounts they belong to
   // (administrators see all of them).
   const d = await withUser(uid, async (tx) => {
-    const actionable = showApprovals ? (await tx.q<{ n: number }>("SELECT count(*)::int AS n FROM app_actionable_requests()"))[0].n : 0;
-    const byState = showRequests ? await tx.q<{ s: string; n: number; amt: string }>("SELECT workflow_state::text AS s, count(*)::int AS n, COALESCE(sum(total_amount), 0) AS amt FROM payment_requests GROUP BY 1") : [];
+    const actionable = showApprovals ? (await tx.q<{ n: number }>("SELECT count(*)::int AS n FROM app_actionable_requests() WHERE $1::uuid IS NULL OR debtor_company_id = $1", [company]))[0].n : 0;
+    const byState = showRequests ? await tx.q<{ s: string; n: number; amt: string }>("SELECT workflow_state::text AS s, count(*)::int AS n, COALESCE(sum(total_amount), 0) AS amt FROM payment_requests WHERE $1::uuid IS NULL OR debtor_company_id = $1 GROUP BY 1", [company]) : [];
     const accounts = showAccounts ? await tx.q<any>(
       `SELECT a.id, a.account_label, a.account_kind::text AS account_kind, a.wallet_phone, b.name AS bank_name, a.account_last4, a.is_active, a.current_balance, a.reserved_balance, a.available_balance, a.shortfall_amount, a.balance_updated_at,
               COALESCE((SELECT array_agg(c.legal_name ORDER BY g.is_owner DESC, c.legal_name) FROM company_bank_account_access g JOIN companies c ON c.id = g.company_id WHERE g.account_id = a.id AND g.revoked_at IS NULL), '{}') AS companies
-         FROM company_bank_accounts a LEFT JOIN banks b ON b.id = a.bank_id ORDER BY a.account_label`) : [];
-    const weeks = canAccess(me, "/treasury") ? await tx.q<any>("SELECT * FROM account_week_status()") : [];
+         FROM company_bank_accounts a LEFT JOIN banks b ON b.id = a.bank_id WHERE ${accountInCompany("a.id", "$1")} ORDER BY a.account_label`, [company]) : [];
+    const weeks = canAccess(me, "/treasury") ? await tx.q<any>(`SELECT * FROM account_week_status() s WHERE ${accountInCompany("s.account_id", "$1")}`, [company]) : [];
     return { actionable, byState, accounts, weeks };
   });
   const st = (s: string) => d.byState.find((x) => x.s === s);

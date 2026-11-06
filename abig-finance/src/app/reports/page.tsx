@@ -3,6 +3,7 @@ import { Flash, ShortfallChip } from "@/components";
 import { dstr, dtime, etb, addisDate, PAYMENT_METHODS, STATE_LABEL, accountPlace } from "@/lib/format";
 import { withUser } from "@/lib/db";
 import { requireAccess } from "@/lib/rbac";
+import { companyScope } from "@/lib/company-scope";
 import { requireMe } from "@/lib/session";
 import { auditRows, BUCKETS, cashRows, paymentRows, pendingRows, REPORT_TABS as TABS } from "@/lib/reports";
 
@@ -13,11 +14,12 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
   const tab = TABS.some(([k]) => k === sp.r) ? sp.r! : "pending";
   const today = addisDate(), from = DATE.test(sp.from ?? "") ? sp.from! : addisDate(new Date(Date.now() - 30 * 864e5)), to = DATE.test(sp.to ?? "") ? sp.to! : today;
   const q = (sp.q ?? "").trim() || null;
+  const company = await companyScope(me.id);
   const d = await withUser(me.id, async (tx) => {
-    if (tab === "pending") return { rows: await pendingRows(tx) };
-    if (tab === "payments") return { rows: await paymentRows(tx, from, to) };
-    if (tab === "audit") return { rows: await auditRows(tx, q) };
-    return { rows: await cashRows(tx) };
+    if (tab === "pending") return { rows: await pendingRows(tx, company) };
+    if (tab === "payments") return { rows: await paymentRows(tx, from, to, company) };
+    if (tab === "audit") return { rows: await auditRows(tx, q, 200, company) };
+    return { rows: await cashRows(tx, company) };
   });
   const sum = (rows: any[], k = "amount") => rows.reduce((s, r) => s + Number(r[k]), 0);
   const by = (rows: any[], key: string) => [...rows.reduce((m: Map<string, number>, r: any) => m.set(r[key], (m.get(r[key]) ?? 0) + Number(r.amount)), new Map()).entries()].sort((a, b) => b[1] - a[1]);
