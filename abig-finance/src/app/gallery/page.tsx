@@ -1,6 +1,8 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatGrid, StatTile } from "@/components/ui/stat-tile";
 import { StatusTracker } from "@/components/ui/status-tracker";
 import { etb, PAYMENT_METHODS } from "@/lib/format";
 import { requireAccess } from "@/lib/rbac";
@@ -33,7 +35,21 @@ export default async function Gallery() {
   return (
     <>
       <h1>Component gallery</h1>
-      <p className="sub">The shared components, with made-up data. Use the theme button in the header for dark mode, and a narrow window for the phone layout.</p>
+      <p className="sub">The shared components, with made-up data. Use the account menu for dark mode, and a narrow window for the phone layout.</p>
+
+      <Section title="Page header">
+        <PageHeader title="Example screen" description="One line about what this screen is for." action={<Button>Main action</Button>} />
+      </Section>
+
+      <Section title="Stat tiles">
+        <StatGrid>
+          <StatTile label="Current balance" value={etb(1500000)} />
+          <StatTile label="With a note" value={etb(400000)} hint="Two payments" />
+          <StatTile label="Opens a list" value={12} href="/gallery" />
+          <StatTile label="Needs attention" value={3} tone="warning" />
+          <StatTile label="Urgent" value={1} tone="destructive" />
+        </StatGrid>
+      </Section>
 
       <Section title="Colours">
         <div className="flex flex-wrap gap-3">{SWATCHES.map((s) => <div key={s} className="text-xs text-muted-foreground"><div className="mb-1 h-10 w-20 rounded-md border" style={{ background: `var(--${s})` }} />{s}</div>)}</div>
