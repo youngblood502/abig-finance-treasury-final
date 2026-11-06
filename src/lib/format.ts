@@ -14,6 +14,14 @@ export const amount2 = (v: unknown) => Number(v ?? 0).toFixed(2);
 // Date columns reach here as text (see db.ts); only real timestamps need converting.
 export const dstr = (v: unknown) => (v instanceof Date ? addisDate(v) : String(v ?? "").slice(0, 10));
 export const dtime = (v: unknown) => { if (!(v instanceof Date)) return String(v ?? ""); const p = parts(v); return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute} EAT`; };
+/** How long ago something happened, in words: for queues and "last checked", where the exact time matters less than the wait. */
+export const ageSince = (then: Date, now: Date = new Date()) => {
+  const minutes = Math.floor((now.getTime() - then.getTime()) / 60000);
+  const say = (n: number, unit: string) => `${n} ${unit}${n === 1 ? "" : "s"} ago`;
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return say(minutes, "minute");
+  return minutes < 1440 ? say(Math.floor(minutes / 60), "hour") : say(Math.floor(minutes / 1440), "day");
+};
 export const STATE_LABEL: Record<string, string> = {
   DRAFT: "Draft", SCHEDULED: "Scheduled", RESERVED: "Funds reserved, waiting for verification", VERIFIED: "Verified, waiting for authentication",
   AUTHENTICATED: "Authenticated, not yet paid", PAID: "Paid", REJECTED: "Rejected", CANCELLED: "Cancelled",

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ChevronDown, KeyRound, LogOut, ShieldCheck } from "lucide-react";
 import { logoutAction } from "@/app/auth-actions";
 import { Button } from "@/components/ui/button";
+import { ThemeMenuItem } from "./theme-toggle";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 const initials = (name: string) => (name.match(/\p{L}+/gu) ?? []).slice(0, 2).map((w) => w[0].toUpperCase()).join("");
@@ -25,6 +26,7 @@ export function UserMenu({ name, details }: { name: string; details: string[] })
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild><Link href="/account/password"><KeyRound />Password</Link></DropdownMenuItem>
         <DropdownMenuItem asChild><Link href="/account/security"><ShieldCheck />Two-step sign-in</Link></DropdownMenuItem>
+        <ThemeMenuItem />
         <DropdownMenuSeparator />
         {/* The menu stays open here, so the form is still on the page when the sign-out request goes out. */}
         <form action={logoutAction}>
