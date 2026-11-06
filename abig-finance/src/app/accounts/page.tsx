@@ -1,12 +1,16 @@
 import { Flash, ShortfallChip } from "@/components";
 import Link from "next/link";
 import { grantAccess, registerAccount, revokeAccess, setAccountPolicy, setDepositAlert } from "../actions";
-import { accountInCompany } from "@/lib/company";
 import { companyScope } from "@/lib/company-scope";
-import { ACCOUNT_KINDS, accountPlace, ANOMALIES, dtime, ENTRY_KINDS, etb, etbOrBlank, PRIVATE_LOG_NOTE } from "@/lib/format";
+import { BalanceLog } from "@/components/treasury/balance-log";
+import { Button } from "@/components/ui/button";
+import { SidePanel } from "@/components/ui/side-panel";
+import { RESERVED_LABEL, SHARED_RESERVED_HINT } from "@/lib/dashboard";
+import { ACCOUNT_KINDS, accountPlace, dtime, etb } from "@/lib/format";
 import { withUser } from "@/lib/db";
-import { requireAccess } from "@/lib/rbac";
+import { canAccess, requireAccess } from "@/lib/rbac";
 import { currentUserId, requireMe, hasPermission } from "@/lib/session";
+import { accountList } from "@/lib/treasury-screens";
 
 export default async function Accounts({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams; const uid = await currentUserId(); const me = await requireMe();
@@ -14,25 +18,16 @@ export default async function Accounts({ searchParams }: { searchParams: Promise
   const company = await companyScope(uid);
   const d = await withUser(uid, async (tx) => {
     // Who may update or manage an account is decided in the database (app_can_snapshot / app_can_manage_access).
-    const accounts = await tx.q<any>(
-      `SELECT a.id, a.account_label, a.account_kind::text AS account_kind, a.wallet_phone, b.name AS bank_name, a.account_last4, a.min_buffer, a.large_deposit_threshold, a.is_active,
-              a.current_balance, a.reserved_balance, a.available_balance, a.shortfall_amount, a.balance_updated_at,
-              o.id AS owner_company_id, o.legal_name AS owner,
-              app_can_snapshot(a.id) AS can_update, app_can_manage_access(a.id) AS can_manage, app_account_access(a.id) AS access
-         FROM company_bank_accounts a LEFT JOIN banks b ON b.id = a.bank_id LEFT JOIN companies o ON o.id = account_owner_company(a.id)
-        WHERE ${accountInCompany("a.id", "$1")} ORDER BY a.account_label`, [company]);
-    for (const a of accounts) {
-      a.users = await tx.q<any>("SELECT g.id, c.legal_name AS name, g.is_owner, g.permissions FROM company_bank_account_access g JOIN companies c ON c.id = g.company_id WHERE g.account_id = $1 AND g.revoked_at IS NULL ORDER BY g.is_owner DESC, c.legal_name", [a.id]);
-      a.history = await tx.q<any>("SELECT * FROM account_balance_history($1, 10)", [a.id]);
-    }
-    const companies = await tx.q<any>("SELECT * FROM company_directory() WHERE is_active");
+    const accounts = await accountList(tx, company);
+    const companies = await tx.q<{ id: string; legal_name: string }>("SELECT id, legal_name FROM company_directory() WHERE is_active");
     return { accounts, companies };
   });
   const registrars = me.memberships.filter((m) => hasPermission(me, "bank_account:manage", m.company_id));
-  const active = d.accounts.filter((a: any) => a.is_active);
-  const totalCurrent = active.reduce((s: number, a: any) => s + Number(a.current_balance), 0);
-  const totalReserved = active.reduce((s: number, a: any) => s + Number(a.reserved_balance), 0);
-  const totalAvailable = active.reduce((s: number, a: any) => s + Number(a.available_balance), 0);
+  const active = d.accounts.filter((a) => a.is_active);
+  const anyShared = active.some((a) => a.users.length > 1);
+  const totalCurrent = active.reduce((s, a) => s + Number(a.current_balance), 0);
+  const totalReserved = active.reduce((s, a) => s + Number(a.reserved_balance), 0);
+  const totalAvailable = active.reduce((s, a) => s + Number(a.available_balance), 0);
   return (
     <>
       <h1>Accounts</h1><p className="sub">One balance per account, however many companies share it.</p><Flash sp={sp} />
@@ -41,31 +36,25 @@ export default async function Accounts({ searchParams }: { searchParams: Promise
         <h2>Account Cash Summary</h2>
         <div className="figs">
           <div className="card"><b>{etb(totalCurrent)}</b><span>Total current balance</span></div>
-          <div className="card"><b>{etb(totalReserved)}</b><span>Total reserved balance (held for active payment requests)</span></div>
+          <div className="card"><b>{etb(totalReserved)}</b><span>{RESERVED_LABEL}{anyShared ? `. ${SHARED_RESERVED_HINT}` : ""}</span></div>
           <div className="card"><b>{etb(totalAvailable)}</b><span>Net available cash (after minimum buffers)</span></div>
         </div>
         <p className="mute">Across {active.length} active account{active.length === 1 ? "" : "s"}. Each shared account is counted once.</p>
       </>)}
-      {d.accounts.map((a: any) => (
+      {d.accounts.map((a) => (
         <div className="card" key={a.id}>
           <div className="row"><div><b>{a.account_label}</b> <span className="mute">{accountPlace(a)}</span><div className="mute">Legal owner: {a.owner ?? "none"}</div></div>
             <div style={{ textAlign: "right" }}><b>{etb(a.available_balance)}</b><div className="mute">available</div></div></div>
           <div className="figs" style={{ marginTop: 10 }}>
             <div className="card"><b>{etb(a.current_balance)}</b><span>Current balance</span></div>
-            <div className="card"><b>{etb(a.reserved_balance)}</b><span>Reserved</span></div>
+            <div className="card"><b>{etb(a.reserved_balance)}</b><span>Reserved on this account{a.users.length > 1 ? ", all companies" : ""}</span></div>
             <div className="card"><b>{etb(a.available_balance)}</b><span>Available (current minus reserved minus {etb(a.min_buffer)} buffer)</span></div>
           </div>
           <div className="mute">{a.balance_updated_at ? `Balance last updated ${dtime(a.balance_updated_at)}` : "No balance has been entered yet"}</div>
-          <div style={{ marginTop: 6 }}>{a.users.map((u: any) => <span className="chip" key={u.id}>{u.name}{u.is_owner ? " (owner)" : ""} can use{u.permissions.includes("RECORD_SNAPSHOT") ? " and update the balance" : ""}</span>)}
+          <div style={{ marginTop: 6 }}>{a.users.map((u) => <span className="chip" key={u.id}>{u.name}{u.is_owner ? " (owner)" : ""} can use{u.permissions.includes("RECORD_SNAPSHOT") ? " and update the balance" : ""}</span>)}
             <ShortfallChip amount={a.shortfall_amount} />{!a.is_active && <span className="chip b">Inactive</span>}</div>
-          {a.can_update && <p style={{ marginTop: 10 }}><Link href={`/treasury/${a.id}`}>Enter a balance check</Link></p>}
-          <details style={{ marginTop: 10 }}><summary>Balance history</summary>
-            {a.history.length === 0 ? <p className="mute">No balance updates yet.</p> : (
-              <div className="scroll"><table><thead><tr><th>When</th><th className="n">Previous</th><th className="n">New</th><th>Reason</th><th className="n">Implied deposit</th><th>By</th></tr></thead>
-                <tbody>{a.history.map((h: any) => <tr key={h.id}><td>{dtime(h.updated_at)}</td><td className="n">{etbOrBlank(h.previous_balance)}</td><td className="n">{etb(h.new_balance)}</td><td>{h.request_no ? `Payment ${h.request_no}` : ENTRY_KINDS[h.entry_kind]}{h.anomalies.map((x: string) => <span className="chip w" key={x}>{ANOMALIES[x]}</span>)}</td><td className="n">{etbOrBlank(h.implied_deposit)}</td><td>{h.updated_by_name}</td></tr>)}</tbody></table></div>)}
-            {a.history.length === 10 && <p className="mute">The 10 most recent updates are shown.</p>}
-            {a.access === "NONE" && <p className="mute">{PRIVATE_LOG_NOTE}</p>}
-          </details>
+          {a.is_active && (a.can_update || canAccess(me, "/treasury")) && <p style={{ marginTop: 10 }}><Link href={`/treasury/${a.id}`}>{a.can_update ? "Enter a balance check" : "Open this account's week"}</Link></p>}
+          <div style={{ marginTop: 10 }}><SidePanel title={`${a.account_label}: balance log`} description="The latest 25 entries." trigger={<Button variant="outline" size="sm">Balance log</Button>}><BalanceLog entries={a.history} access={a.access} pageSize={10} /></SidePanel></div>
           {a.can_manage && (
             <details style={{ marginTop: 10 }}><summary>Manage this account</summary>
               <form action={setAccountPolicy} className="form" style={{ marginTop: 8 }}><input type="hidden" name="account" value={a.id} />
@@ -75,9 +64,9 @@ export default async function Accounts({ searchParams }: { searchParams: Promise
                 <label className="f">Flag an implied deposit above (ETB)<input name="threshold" type="number" min="0.01" step="0.01" defaultValue={Number(a.large_deposit_threshold)} /></label>
                 <button>Save</button></form>
               <h3 style={{ fontSize: 14 }}>Companies that share it</h3>
-              {a.users.filter((u: any) => !u.is_owner).map((u: any) => <div key={u.id} className="inline"><span className="chip">{u.name}{u.permissions.includes("RECORD_SNAPSHOT") ? " (can also update the balance)" : ""}</span><form action={revokeAccess}><input type="hidden" name="id" value={u.id} /><button className="sec">Withdraw</button></form></div>)}
+              {a.users.filter((u) => !u.is_owner).map((u) => <div key={u.id} className="inline"><span className="chip">{u.name}{u.permissions.includes("RECORD_SNAPSHOT") ? " (can also update the balance)" : ""}</span><form action={revokeAccess}><input type="hidden" name="id" value={u.id} /><button className="sec">Withdraw</button></form></div>)}
               <form action={grantAccess} className="form" style={{ marginTop: 8 }}><input type="hidden" name="account" value={a.id} />
-                <label className="f">Allow company<select name="company">{d.companies.filter((c: any) => !a.users.some((u: any) => u.name === c.legal_name)).map((c: any) => <option key={c.id} value={c.id}>{c.legal_name}</option>)}</select></label>
+                <label className="f">Allow company<select name="company">{d.companies.filter((c) => !a.users.some((u) => u.name === c.legal_name)).map((c) => <option key={c.id} value={c.id}>{c.legal_name}</option>)}</select></label>
                 <label className="f">Also<span className="inline"><input type="checkbox" name="snapshot" />May update the balance</span></label><button>Grant access</button></form>
             </details>)}
         </div>))}
