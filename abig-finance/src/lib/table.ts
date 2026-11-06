@@ -8,6 +8,13 @@ const compare = (a: string | number | undefined, b: string | number | undefined)
   return typeof a === "number" && typeof b === "number" ? a - b : String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });
 };
 
+export interface SelectOption { value: string; label: string; hint?: string; disabled?: boolean }
+/** What a Searchable Select shows: every option, or those whose label or hint contains each typed word, in any order. */
+export const filterOptions = (options: SelectOption[], query: string) => {
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  return words.length === 0 ? options : options.filter((o) => { const text = `${o.label} ${o.hint ?? ""}`.toLowerCase(); return words.every((w) => text.includes(w)); });
+};
+
 export function tableView<T extends TableRow>(rows: T[], q: TableQuery) {
   const needle = q.query.trim().toLowerCase();
   const found = rows.filter((r) => (!needle || (r.search ?? "").toLowerCase().includes(needle)) && Object.entries(q.filters).every(([k, v]) => !v || r.filters?.[k] === v));

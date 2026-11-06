@@ -1,13 +1,9 @@
-import { etb, STATE_LABEL } from "@/lib/format";
+import { etb } from "@/lib/format";
 
 export function Flash({ sp }: { sp: { msg?: string; err?: string } }) {
   if (sp.err) return <div className="note bad" role="alert">{sp.err}</div>;
   if (sp.msg) return <div className="note ok" role="status">{sp.msg}</div>;
   return null;
-}
-export function StateChip({ state }: { state: string }) {
-  const cls = state === "PAID" ? "" : state === "REJECTED" || state === "CANCELLED" ? "b" : state === "AUTHENTICATED" ? "w" : "o";
-  return <span className={`chip ${cls}`}>{STATE_LABEL[state] ?? state}</span>;
 }
 /** Shown in red wherever an account appears while its balance is below the reserved funds. */
 export function ShortfallChip({ amount }: { amount: unknown }) {

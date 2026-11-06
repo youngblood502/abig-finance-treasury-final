@@ -1,6 +1,9 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { Timeline } from "@/components/ui/timeline";
+import { DemoControls } from "./demo-controls";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatGrid, StatTile } from "@/components/ui/stat-tile";
 import { StatusTracker } from "@/components/ui/status-tracker";
@@ -62,6 +65,20 @@ export default async function Gallery() {
 
       <Section title="Badges">
         <div className="flex flex-wrap gap-2"><Badge>Default</Badge><Badge variant="secondary">Secondary</Badge><Badge variant="warning">Warning</Badge><Badge variant="destructive">Destructive</Badge><Badge variant="outline">Outline</Badge></div>
+      </Section>
+
+      <Section title="Status badges">
+        <div className="flex flex-wrap gap-2">{["DRAFT", "SCHEDULED", "RESERVED", "VERIFIED", "AUTHENTICATED", "PAID", "REJECTED", "CANCELLED"].map((s) => <StatusBadge key={s} state={s} />)}</div>
+      </Section>
+
+      <Section title="Form controls"><DemoControls /></Section>
+
+      <Section title="Timeline">
+        <Timeline entries={[
+          { key: "1", when: new Date("2026-11-02T06:00:00Z"), who: "Example Accountant", role: "accountant", title: "Submitted", detail: null, reason: null, tone: "default" },
+          { key: "2", when: new Date("2026-11-02T08:00:00Z"), who: "Example Manager", role: "finance manager", title: "Total changed", detail: "ETB 1,000.00 to ETB 900.00", reason: "Matches the corrected invoice", tone: "warning" },
+          { key: "3", when: new Date("2026-11-02T09:00:00Z"), who: "Example Owner", role: "owner", title: "Rejected", detail: null, reason: "Delivery not confirmed", tone: "destructive" },
+        ]} />
       </Section>
 
       <Section title="Data table">
