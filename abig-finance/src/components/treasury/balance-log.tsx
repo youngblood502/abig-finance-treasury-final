@@ -11,7 +11,7 @@ const COLUMNS: Record<string, DataColumn> = {
 export interface BalanceLogEntry { id: string; updated_at: Date; previous_balance: string | null; new_balance: string; updated_by_name: string | null; request_no: string | null; entry_kind: string; bank_figure: string | null; outstanding_total: string | null; implied_deposit: string | null; anomalies: string[] }
 
 /** One account's balance log. account_balance_history() decides what each person gets; this draws it, and a value held back stays blank. */
-export function BalanceLog({ entries, access, pageSize = 20 }: { entries: BalanceLogEntry[]; access: AccessLevel; pageSize?: number }) {
+export function BalanceLog({ entries, access, pageSize = 20, limit }: { entries: BalanceLogEntry[]; access: AccessLevel; pageSize?: number; /** How many entries were asked for. Reaching it means there may be older ones. */ limit?: number }) {
   const rows: DataRow[] = entries.map((h) => ({
     id: h.id, sort: { when: h.updated_at.getTime(), balance: Number(h.new_balance) },
     cells: {
@@ -23,6 +23,7 @@ export function BalanceLog({ entries, access, pageSize = 20 }: { entries: Balanc
   return (
     <>
       <DataTable caption="Balance log" columns={logColumnKeys(access, entries).map((k) => COLUMNS[k])} rows={rows} pageSize={pageSize} emptyMessage="No balance entries yet." />
+      {limit !== undefined && entries.length >= limit && <p className="mute mt-2 mb-0">Showing the latest {limit} entries. Older entries are not shown.</p>}
       {access === "NONE" && <p className="mute mt-2 mb-0">{PRIVATE_LOG_NOTE}</p>}
     </>
   );

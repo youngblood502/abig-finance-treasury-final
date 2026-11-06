@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Flash, ShortfallChip } from "@/components";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatGrid, StatTile } from "@/components/ui/stat-tile";
@@ -38,7 +39,7 @@ export default async function Treasury({ searchParams }: { searchParams: Promise
       opening: a.has_opening ? "Recorded" : <Badge variant="warning">Not recorded</Badge>, last: a.last_figure_at ? ageSince(a.last_figure_at, now) : "Never",
       balance: etb(a.current_balance), reserved: etb(a.reserved_balance), available: etb(a.available_balance),
       outstanding: <>{a.outstanding_count} ({etb(a.outstanding_amount)}){a.overdue_count > 0 && <Badge variant="destructive" className="ml-2">{a.overdue_count} over 14 days</Badge>}<span className="block text-xs text-muted-foreground">{outstandingScope(a.access, a.shared)}</span></>,
-      status: WEEK_STATUS[a.status],
+      status: a.week_id && a.status !== "OPEN" ? <Link href={`/treasury/week/${a.week_id}`}>{WEEK_STATUS[a.status]}</Link> : WEEK_STATUS[a.status],
     },
   }));
   const scheduleRows: DataRow[] = d.schedule.map((s) => ({
@@ -51,7 +52,7 @@ export default async function Treasury({ searchParams }: { searchParams: Promise
   }));
   return (
     <>
-      <PageHeader title="Weekly treasury" description="Each account's week, and what falls due. Weeks run Monday to Sunday." />
+      <PageHeader title="Weekly treasury" description="Each account's week, and what falls due. Weeks run Monday to Sunday." action={<Button asChild variant="outline"><Link href="/treasury/overview">Week overview</Link></Button>} />
       <Flash sp={sp} />
       <StatGrid>
         <StatTile label="Accounts with no opening" value={noOpening.length} tone={noOpening.length > 0 ? "warning" : "default"} />
