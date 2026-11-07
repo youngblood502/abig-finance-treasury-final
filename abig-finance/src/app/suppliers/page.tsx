@@ -1,52 +1,84 @@
-import { Flash } from "@/components";
 import { addBankDetail, addSupplier, linkSupplier, rejectBankDetail, updateSupplier, verifyBankDetail } from "../actions";
-import { withUser } from "@/lib/db";
+import { Flash } from "@/components";
+import { PaymentHistory, PayeeTabs, Section, VersionList } from "@/components/payees/payee-parts";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table";
+import { PageHeader } from "@/components/ui/page-header";
+import { SidePanel } from "@/components/ui/side-panel";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { companyScope } from "@/lib/company-scope";
-import { can, requireAccess } from "@/lib/rbac";
+import { withUser } from "@/lib/db";
+import { canChangeSupplierStatus, LIST_FILTERS, listFilters, supplierList, verifiedVersion, type SupplierRow } from "@/lib/payee-screens";
+import { can, canAccess, requireAccess } from "@/lib/rbac";
 import { currentUserId, requireMe } from "@/lib/session";
+
+const COLUMNS: DataColumn[] = [{ key: "name", header: "Supplier", primary: true, sortable: true }, { key: "tin", header: "TIN", sortable: true }, { key: "companies", header: "Your companies" }, { key: "bank", header: "Verified bank details" }, { key: "open", header: "" }];
+const NameField = ({ value }: { value?: string }) => <label className="f">Legal name<input name="name" defaultValue={value} required /></label>;
+const TinField = ({ value }: { value?: string | null }) => <label className="f">TIN (optional)<input name="tin" defaultValue={value ?? ""} pattern="[0-9A-Za-z\-]{6,20}" title="6 to 20 letters, digits or hyphens" /></label>;
+interface Company { id: string; name: string }
+
+function SupplierPanel({ s, userId, canVerify, canEdit, canSetStatus, entering }: { s: SupplierRow; userId: string; canVerify: boolean; canEdit: boolean; canSetStatus: boolean; entering: Company[] }) {
+  const linkable = entering.filter((c) => !s.links.some((l) => l.company_id === c.id));
+  return (
+    <SidePanel title={s.legal_name} description={s.tin ? `TIN ${s.tin}` : "No TIN recorded"} trigger={<Button variant="outline" size="sm">Details</Button>}>
+      <Section title="Bank details">
+        <VersionList userId={userId} canVerify={canVerify} verify={verifyBankDetail} reject={rejectBankDetail} versions={s.versions.map((v) => ({ ...v, label: `${v.bank_name} ••••${v.account_last4}` }))} />
+        {canEdit && (
+          <form action={addBankDetail} className="mt-3 flex flex-col gap-3 border-t pt-3"><input type="hidden" name="supplier" value={s.id} />
+            <label className="f">Bank<input name="bank" required /></label><label className="f">Last 4 digits of the account<input name="last4" required pattern="[0-9]{4}" maxLength={4} inputMode="numeric" /></label>
+            <div><SubmitButton variant="outline">Enter for verification</SubmitButton></div></form>
+        )}
+      </Section>
+      <Section title="Your companies that use this supplier">
+        {s.links.length === 0 ? <p className="m-0 text-sm text-muted-foreground">None of your companies use this supplier yet.</p> : <ul className="m-0 flex list-none flex-wrap gap-1 p-0">{s.links.map((l) => <li key={l.company_id}><Badge variant="outline">{l.company}{l.status === "ACTIVE" ? "" : ` (${l.status.toLowerCase()})`}</Badge></li>)}</ul>}
+        {canEdit && linkable.length > 0 && (
+          <form action={linkSupplier} className="mt-3 flex flex-wrap items-end gap-2"><input type="hidden" name="supplier" value={s.id} />
+            <label className="f">Use for company<select name="company">{linkable.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><SubmitButton variant="outline" size="sm">Link</SubmitButton></form>
+        )}
+      </Section>
+      <Section title="Latest payments"><PaymentHistory lines={s.history} /></Section>
+      {canEdit && (
+        <Section title={canSetStatus ? "Correct name, TIN or status" : "Correct name or TIN"}>
+          <form action={updateSupplier} className="flex flex-col gap-3"><input type="hidden" name="id" value={s.id} /><NameField value={s.legal_name} /><TinField value={s.tin} />
+            {canSetStatus && <><input type="hidden" name="status_shown" value="1" /><label className="flex items-center gap-2 text-sm"><input type="checkbox" name="active" defaultChecked={s.is_active} />Active</label></>}
+            <p className="m-0 text-sm text-muted-foreground">Not allowed while this supplier has requests in progress.</p><div><SubmitButton variant="outline">Save</SubmitButton></div></form>
+        </Section>
+      )}
+    </SidePanel>
+  );
+}
 
 export default async function Suppliers({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams; const uid = await currentUserId(); const me = await requireMe();
   requireAccess(me, "/suppliers");
   const company = await companyScope(uid);
-  const d = await withUser(uid, async (tx) => {
-    const suppliers = await tx.q<any>("SELECT id, legal_name, tin, is_active FROM suppliers WHERE $1::uuid IS NULL OR id IN (SELECT supplier_id FROM company_suppliers WHERE company_id = $1) ORDER BY legal_name", [company]);
-    const banks = await tx.q<any>("SELECT id, supplier_id, version, bank_name, account_last4, status, created_by, rejection_reason FROM supplier_bank_details ORDER BY supplier_id, version DESC");
-    const links = await tx.q<any>("SELECT cs.supplier_id, c.legal_name AS company, cs.status FROM company_suppliers cs JOIN companies c ON c.id = cs.company_id ORDER BY c.legal_name");
-    const companies = (await tx.q<any>("SELECT id, legal_name AS name FROM company_directory() WHERE is_active"));
-    return { suppliers, banks, links, companies };
-  });
+  const d = await withUser(uid, async (tx) => ({ suppliers: await supplierList(tx, company), mayChangeStatus: await canChangeSupplierStatus(tx), companies: await tx.q<Company>("SELECT id, legal_name AS name FROM company_directory() WHERE is_active") }));
   // Entering suppliers needs supplier:manage; verifying a supplier's bank details needs payment_request:verify (Finance Managers).
-  const entering = me.isAdmin ? d.companies : me.memberships.filter((m) => m.permissions.includes("supplier:manage")).map((m) => ({ id: m.company_id, name: m.company }));
-  const canVerify = can(me, "payment_request:verify"), canEnter = can(me, "supplier:manage"), canEdit = canEnter;
-  const chip = (s: string) => <span className={`chip ${s === "VERIFIED" ? "" : s === "PENDING" ? "w" : "o"}`}>{s === "VERIFIED" ? "Verified" : s === "PENDING" ? "Waiting for verification" : s === "REJECTED" ? "Rejected" : "Replaced"}</span>;
+  const entering: Company[] = me.isAdmin ? d.companies : me.memberships.filter((m) => m.permissions.includes("supplier:manage")).map((m) => ({ id: m.company_id, name: m.company }));
+  const canVerify = can(me, "payment_request:verify"), canEdit = can(me, "supplier:manage"), canSetStatus = canEdit && d.mayChangeStatus;
+  const rows: DataRow[] = d.suppliers.map((s) => {
+    const verified = verifiedVersion(s.versions), waiting = s.versions.some((v) => v.status === "PENDING");
+    return {
+      id: s.id, search: `${s.legal_name} ${s.tin ?? ""}`, filters: listFilters(s.is_active, s.versions), sort: { name: s.legal_name, tin: s.tin ?? "" },
+      cells: {
+        name: <><b>{s.legal_name}</b>{!s.is_active && <Badge variant="destructive" className="ml-2">Inactive</Badge>}</>, tin: s.tin ?? <span className="text-muted-foreground">None</span>, companies: s.links.length > 0 ? s.links.map((l) => l.company).join(", ") : "None",
+        bank: <>{verified ? `${verified.bank_name} ••••${verified.account_last4}` : "None"}{waiting && <Badge variant="warning" className="ml-2">To verify</Badge>}</>, open: <SupplierPanel s={s} userId={me.id} canVerify={canVerify} canEdit={canEdit} canSetStatus={canSetStatus} entering={entering} />,
+      },
+    };
+  });
   return (
     <>
-      <h1>Suppliers</h1><p className="sub">One list for the whole group. Bank details are masked, and every change must be verified by someone other than the person who entered it.</p><Flash sp={sp} />
-      {d.suppliers.map((s: any) => (
-        <div className="card" key={s.id}>
-          <div className="row"><div><b>{s.legal_name}</b> <span className="mute">TIN {s.tin}</span>{!s.is_active && <span className="chip b">Inactive</span>}</div><div>{d.links.filter((l: any) => l.supplier_id === s.id).map((l: any) => <span className="chip o" key={l.company}>{l.company}{l.status === "ACTIVE" ? "" : ` (${l.status.toLowerCase()})`}</span>)}</div></div>
-          {canEdit && <details style={{ margin: "6px 0" }}><summary className="mute">Correct name, TIN or status</summary>
-            <form action={updateSupplier} className="form" style={{ marginTop: 8 }}><input type="hidden" name="id" value={s.id} /><label className="f">Legal name<input name="name" defaultValue={s.legal_name} required /></label><label className="f">TIN<input name="tin" defaultValue={s.tin} required pattern="[0-9A-Za-z\-]{6,20}" /></label>
-              <label className="f">Status<span className="inline"><input type="checkbox" name="active" defaultChecked={s.is_active} />Active</span></label><button>Save</button></form>
-            <p className="mute">Not allowed while this supplier has requests in progress.</p></details>}
-          <table><tbody>{d.banks.filter((b: any) => b.supplier_id === s.id).map((b: any) => (
-            <tr key={b.id}><td>Version {b.version}</td><td>{b.bank_name} ••••{b.account_last4}</td><td>{chip(b.status)}{b.rejection_reason && <span className="mute"> {b.rejection_reason}</span>}</td>
-              <td>{b.status === "PENDING" && canVerify && b.created_by !== me.id && (
-                <form action={verifyBankDetail} className="inline"><input type="hidden" name="id" value={b.id} /><input name="reason" placeholder="Reason (to reject)" aria-label="Reason to reject" />
-                  <button>Verify</button><button formAction={rejectBankDetail} className="sec">Reject</button></form>)}
-                {b.status === "PENDING" && b.created_by === me.id && <span className="mute">Someone else must verify this</span>}</td></tr>))}</tbody></table>
-        </div>))}
-      {canEnter && (<>
-        <h2>Add a supplier</h2>
-        <form action={addSupplier} className="card form"><label className="f">Legal name<input name="name" required /></label><label className="f">TIN<input name="tin" required pattern="[0-9A-Za-z\-]{6,20}" /></label>
-          <label className="f">Use for company<select name="company">{entering.map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label><button>Add supplier</button></form>
-        <h2>Enter bank details</h2>
-        <form action={addBankDetail} className="card form"><label className="f">Supplier<select name="supplier">{d.suppliers.map((s: any) => <option key={s.id} value={s.id}>{s.legal_name}</option>)}</select></label>
-          <label className="f">Bank<input name="bank" required /></label><label className="f">Last 4 digits of the account<input name="last4" required pattern="[0-9]{4}" maxLength={4} /></label><button>Enter for verification</button></form>
-        <h2>Use an existing supplier for a company</h2>
-        <form action={linkSupplier} className="card form"><label className="f">Supplier<select name="supplier">{d.suppliers.map((s: any) => <option key={s.id} value={s.id}>{s.legal_name}</option>)}</select></label>
-          <label className="f">Company<select name="company">{entering.map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label><button>Link</button></form></>)}
+      <PageHeader title="Suppliers" description="One list for the whole group. Bank details are masked, and every change must be verified by someone other than the person who entered it."
+        action={canEdit ? (
+          <SidePanel title="Add a supplier" description="Add bank details next. Someone else must verify them before any payment." trigger={<Button>Add a supplier</Button>}>
+            <form action={addSupplier} className="mt-3 flex flex-col gap-3"><NameField /><TinField />
+              <label className="f">Use for company<select name="company">{entering.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label><div><SubmitButton>Add supplier</SubmitButton></div></form>
+          </SidePanel>
+        ) : undefined} />
+      <PayeeTabs active="suppliers" suppliers people={canAccess(me, "/payees")} />
+      <Flash sp={sp} />
+      <div className="rounded-xl border bg-card p-4"><DataTable caption="Suppliers" columns={COLUMNS} rows={rows} filters={LIST_FILTERS} searchable pageSize={25} emptyMessage="No suppliers yet." /></div>
     </>
   );
 }

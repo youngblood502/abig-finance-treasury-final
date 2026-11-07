@@ -1,63 +1,71 @@
+import { rejectPersonDetail, updatePerson, verifyPersonDetail } from "../actions";
 import { Flash } from "@/components";
-import { addPerson, addPersonDetail, rejectPersonDetail, updatePerson, verifyPersonDetail } from "../actions";
+import { MethodList, PaymentHistory, PayeeTabs, Section, VersionList } from "@/components/payees/payee-parts";
+import { AddPersonForm, PersonDetailForm } from "@/components/payees/person-forms";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table";
+import { PageHeader } from "@/components/ui/page-header";
+import { SidePanel } from "@/components/ui/side-panel";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { companyScope } from "@/lib/company-scope";
-import { PAYMENT_METHODS } from "@/lib/format";
-import { maskId } from "@/lib/payees";
 import { withUser } from "@/lib/db";
-import { can, requireAccess } from "@/lib/rbac";
+import { PAYMENT_METHODS } from "@/lib/format";
+import { LIST_FILTERS, listFilters, personList, readyMethods, type PersonRow } from "@/lib/payee-screens";
+import { maskId } from "@/lib/payees";
+import { canAccess, requireAccess } from "@/lib/rbac";
 import { currentUserId, hasPermission, requireMe } from "@/lib/session";
 
-const methodOptions = Object.entries(PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>);
+const COLUMNS: DataColumn[] = [{ key: "name", header: "Person", primary: true, sortable: true }, { key: "company", header: "Company", sortable: true }, { key: "phone", header: "Phone" }, { key: "ready", header: "Can be paid by" }, { key: "open", header: "" }];
+const Line = ({ label, value }: { label: string; value: React.ReactNode }) => <div className="flex justify-between gap-3 py-0.5 text-sm"><dt className="text-muted-foreground">{label}</dt><dd className="m-0 text-right">{value}</dd></div>;
+const versionLabel = (v: PersonRow["versions"][number]) => (v.kind === "TELEBIRR" ? `Telebirr ${v.telebirr_phone}` : `${v.bank_name} ••••${v.account_last4}`);
+
+function PersonPanel({ p, userId, canManage, canVerify }: { p: PersonRow; userId: string; canManage: boolean; canVerify: boolean }) {
+  return (
+    <SidePanel title={p.full_name} description={p.company} trigger={<Button variant="outline" size="sm">Details</Button>}>
+      <dl className="m-0 mt-3">
+        <Line label="Phone" value={p.phone} /><Line label="ID number" value={maskId(p.id_last4)} /><Line label="Usually paid by" value={PAYMENT_METHODS[p.preferred_method]} /><Line label="Can be paid by" value={<MethodList methods={readyMethods(p.versions)} />} />
+      </dl>
+      <Section title="Bank and Telebirr details">
+        <VersionList userId={userId} canVerify={canVerify} verify={verifyPersonDetail} reject={rejectPersonDetail} versions={p.versions.map((v) => ({ ...v, label: versionLabel(v) }))} />
+        {canManage && <div className="mt-3"><PersonDetailForm person={p.id} /></div>}
+      </Section>
+      <Section title="Latest payments"><PaymentHistory lines={p.history} /></Section>
+      {canManage && (
+        <Section title="Correct name, phone, ID number or status">
+          <form action={updatePerson} className="flex flex-col gap-3"><input type="hidden" name="id" value={p.id} /><input type="hidden" name="company" value={p.company_id} />
+            <label className="f">Full name<input name="name" defaultValue={p.full_name} required /></label><label className="f">Phone<input name="phone" type="tel" defaultValue={p.phone} required /></label>
+            <label className="f">New ID number (leave empty to keep it)<input name="id_number" autoComplete="off" /></label>
+            <label className="f">Usually paid by<select name="preferred" defaultValue={p.preferred_method}>{Object.entries(PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="active" defaultChecked={p.is_active} />Active</label>
+            <p className="m-0 text-sm text-muted-foreground">Name, phone, ID and status cannot change while this person has requests in progress.</p><div><SubmitButton variant="outline">Save</SubmitButton></div></form>
+        </Section>
+      )}
+    </SidePanel>
+  );
+}
 
 export default async function Payees({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams; const uid = await currentUserId(); const me = await requireMe();
   requireAccess(me, "/payees");
   const company = await companyScope(uid);
-  const d = await withUser(uid, async (tx) => ({
-    // Row-level security limits these to the person's own companies. The encrypted ID number cannot be read here at all.
-    people: await tx.q<any>(`SELECT p.id, p.company_id, c.legal_name AS company, p.full_name, p.phone, p.id_last4, p.preferred_method::text AS preferred_method, p.is_active
-      FROM person_payees p JOIN companies c ON c.id = p.company_id WHERE $1::uuid IS NULL OR p.company_id = $1 ORDER BY p.full_name`, [company]),
-    details: await tx.q<any>("SELECT id, person_id, version, kind, bank_name, account_last4, telebirr_phone, status, created_by, rejection_reason FROM person_payment_details ORDER BY person_id, version DESC"),
+  const people = await withUser(uid, (tx) => personList(tx, company));
+  const entering = me.memberships.filter((m) => m.permissions.includes("payee:manage")).map((m) => ({ id: m.company_id, name: m.company }));
+  const rows: DataRow[] = people.map((p) => ({
+    id: p.id, search: `${p.full_name} ${p.phone} ${p.company}`, filters: listFilters(p.is_active, p.versions.filter((v) => v.status !== "REJECTED")), sort: { name: p.full_name, company: p.company },
+    cells: {
+      name: <><b>{p.full_name}</b>{!p.is_active && <Badge variant="destructive" className="ml-2">Inactive</Badge>}<span className="block text-xs text-muted-foreground">ID {maskId(p.id_last4)}</span></>, company: p.company, phone: p.phone,
+      ready: <><MethodList methods={readyMethods(p.versions)} />{p.versions.some((v) => v.status === "PENDING") && <Badge variant="warning" className="ml-2">To verify</Badge>}</>,
+      open: <PersonPanel p={p} userId={me.id} canManage={hasPermission(me, "payee:manage", p.company_id)} canVerify={hasPermission(me, "payment_request:verify", p.company_id)} />,
+    },
   }));
-  const entering = me.memberships.filter((m) => m.permissions.includes("payee:manage"));
-  const canEnter = can(me, "payee:manage");
-  const chip = (s: string) => <span className={`chip ${s === "VERIFIED" ? "" : s === "PENDING" ? "w" : "o"}`}>{s === "VERIFIED" ? "Verified" : s === "PENDING" ? "Waiting for verification" : s === "REJECTED" ? "Rejected" : "Replaced"}</span>;
   return (
     <>
-      <h1>People</h1><p className="sub">People this company pays. ID numbers are encrypted and masked here, and every change to how someone is paid must be verified by a second person.</p><Flash sp={sp} />
-      {d.people.length === 0 && <div className="card">No people yet.</div>}
-      {d.people.map((p: any) => {
-        const canManage = hasPermission(me, "payee:manage", p.company_id), canVerify = hasPermission(me, "payment_request:verify", p.company_id);
-        return (
-          <div className="card" key={p.id}>
-            <div className="row"><div><b>{p.full_name}</b> <span className="mute">{p.phone} · ID {maskId(p.id_last4)} · usually {PAYMENT_METHODS[p.preferred_method]}</span>{!p.is_active && <span className="chip b">Inactive</span>}</div><div><span className="chip o">{p.company}</span></div></div>
-            {canManage && <details style={{ margin: "6px 0" }}><summary className="mute">Correct name, phone, ID number or status</summary>
-              <form action={updatePerson} className="form" style={{ marginTop: 8 }}><input type="hidden" name="id" value={p.id} /><input type="hidden" name="company" value={p.company_id} />
-                <label className="f">Full name<input name="name" defaultValue={p.full_name} required /></label><label className="f">Phone<input name="phone" type="tel" defaultValue={p.phone} required /></label>
-                <label className="f">New ID number (leave empty to keep it)<input name="id_number" autoComplete="off" /></label>
-                <label className="f">Usually paid by<select name="preferred" defaultValue={p.preferred_method}>{methodOptions}</select></label>
-                <label className="f">Status<span className="inline"><input type="checkbox" name="active" defaultChecked={p.is_active} />Active</span></label><button>Save</button></form>
-              <p className="mute">Name, phone, ID and status cannot change while this person has requests in progress.</p></details>}
-            <table><tbody>{d.details.filter((x: any) => x.person_id === p.id).map((x: any) => (
-              <tr key={x.id}><td>Version {x.version}</td><td>{x.kind === "TELEBIRR" ? `Telebirr ${x.telebirr_phone}` : `${x.bank_name} ••••${x.account_last4}`}</td><td>{chip(x.status)}{x.rejection_reason && <span className="mute"> {x.rejection_reason}</span>}</td>
-                <td>{x.status === "PENDING" && canVerify && x.created_by !== me.id && (
-                  <form action={verifyPersonDetail} className="inline"><input type="hidden" name="id" value={x.id} /><input name="reason" placeholder="Reason (to reject)" aria-label="Reason to reject" />
-                    <button>Verify</button><button formAction={rejectPersonDetail} className="sec">Reject</button></form>)}
-                  {x.status === "PENDING" && x.created_by === me.id && <span className="mute">Someone else must verify this</span>}</td></tr>))}</tbody></table>
-          </div>);
-      })}
-      {canEnter && entering.length > 0 && (<>
-        <h2>Add a person</h2>
-        <form action={addPerson} className="card form"><label className="f">Company<select name="company">{entering.map((m) => <option key={m.company_id} value={m.company_id}>{m.company}</option>)}</select></label>
-          <label className="f">Full name<input name="name" required /></label><label className="f">Phone<input name="phone" type="tel" required placeholder="0911 234 567" /></label>
-          <label className="f">ID number<input name="id_number" required autoComplete="off" /></label><label className="f">Usually paid by<select name="preferred" defaultValue="TRANSFER">{methodOptions}</select></label><button>Add person</button></form>
-      </>)}
-      {canEnter && d.people.length > 0 && (<>
-        <h2>Enter bank or Telebirr details</h2>
-        <form action={addPersonDetail} className="card form"><label className="f">Person<select name="person">{d.people.filter((p: any) => hasPermission(me, "payee:manage", p.company_id)).map((p: any) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</select></label>
-          <label className="f">Type<select name="kind"><option value="BANK">Bank</option><option value="TELEBIRR">Telebirr</option></select></label>
-          <label className="f">Bank<input name="bank" /></label><label className="f">Last 4 digits of the account<input name="last4" pattern="[0-9]{4}" maxLength={4} /></label>
-          <label className="f">Telebirr phone<input name="phone" type="tel" placeholder="0911 234 567" /></label><button>Enter for verification</button></form></>)}
+      <PageHeader title="People" description="People a company pays, including one-time payees. They need no supplier registration. ID numbers are encrypted and masked here, and every change to how someone is paid must be verified by a second person."
+        action={entering.length > 0 ? <SidePanel title="Add a person" description="For a one-off payment or a regular one." trigger={<Button>Add a person</Button>}><div className="mt-3"><AddPersonForm companies={entering} /></div></SidePanel> : undefined} />
+      <PayeeTabs active="people" suppliers={canAccess(me, "/suppliers")} people />
+      <Flash sp={sp} />
+      <div className="rounded-xl border bg-card p-4"><DataTable caption="People" columns={COLUMNS} rows={rows} filters={LIST_FILTERS} searchable pageSize={25} emptyMessage="No people yet." /></div>
     </>
   );
 }

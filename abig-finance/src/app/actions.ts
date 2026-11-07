@@ -12,6 +12,7 @@ import * as t from "@/lib/treasury";
 import { ALL_COMPANIES } from "@/lib/company";
 import { COMPANY_COOKIE, myCompanies } from "@/lib/company-scope";
 import { statementReturnPath } from "@/lib/reconciliation";
+import { canChangeSupplierStatus } from "@/lib/payee-screens";
 import { PERSON_DETAIL_FOR_METHOD, protectIdNumber } from "@/lib/payees";
 import { runWorkflow, type WorkflowAction } from "@/lib/workflow";
 
@@ -170,7 +171,7 @@ export async function recordExecution(f: FormData) {
 // ---------- Suppliers ----------
 export async function addSupplier(f: FormData) {
   return act("/suppliers", "Supplier added. Add bank details next; a Verifier must verify them before any payment request.", guard(["supplier:manage"], (uid) => dbl(withUser(uid, async (tx) => {
-    const sid = (await tx.q<{ id: string }>("INSERT INTO suppliers (legal_name, tin, created_by) VALUES ($1,$2,$3) RETURNING id", [str(f, "name"), str(f, "tin"), uid]))[0].id;
+    const sid = (await tx.q<{ id: string }>("INSERT INTO suppliers (legal_name, tin, created_by) VALUES ($1,$2,$3) RETURNING id", [str(f, "name"), str(f, "tin").trim() || null, uid]))[0].id;
     if (str(f, "company")) await tx.q("INSERT INTO company_suppliers (company_id, supplier_id, created_by) VALUES ($1,$2,$3)", [str(f, "company"), sid, uid]);
   }))));
 }
@@ -224,10 +225,10 @@ async function saveExistingDraft(f: FormData, submit: boolean) {
 }
 
 // ---------- People who are paid ----------
-const PERSON_MSG = "Person added. Enter their bank or Telebirr details next; someone else must verify them before they are used.";
+const PERSON_MSG = "Person added. Cash and cheque can be used now. Transfer and Telebirr need details that someone else has verified.";
 export async function addPerson(f: FormData) {
   const company = str(f, "company");
-  return act("/payees", PERSON_MSG, guard(["payee:manage"], (uid) => dbl(withUser(uid, (tx) => {
+  return act(str(f, "back") === "request" ? "/requests/new" : "/payees", PERSON_MSG, guard(["payee:manage"], (uid) => dbl(withUser(uid, (tx) => {
     const id = protectIdNumber(str(f, "id_number"), company);
     return tx.q("SELECT person_payee_create($1,$2,$3,$4,$5,$6,$7::payment_method)", [company, str(f, "name"), str(f, "phone"), id.enc, id.last4, id.hash, str(f, "preferred") || "TRANSFER"]);
   }))));
@@ -252,7 +253,12 @@ async function decidePersonDetail(f: FormData, ok: boolean) {
 
 // ---------- Supplier corrections ----------
 export async function updateSupplier(f: FormData) {
-  return act("/suppliers", "Supplier updated.", guard(["supplier:manage"], (uid) => dbl(withUser(uid, (tx) => tx.q("SELECT supplier_update($1,$2,$3,$4)", [str(f, "id"), str(f, "name"), str(f, "tin"), str(f, "active") === "on"])))));
+  // Only those who decide the status are sent the field. Without it the status stays as it is.
+  const active = str(f, "status_shown") === "1" ? str(f, "active") === "on" : null;
+  return act("/suppliers", "Supplier updated.", guard(["supplier:manage"], (uid) => dbl(withUser(uid, async (tx) => {
+    if (active !== null && !(await canChangeSupplierStatus(tx))) throw new WorkflowError(403, "Only a Verifier or Finance Manager can change a supplier's status.");
+    return tx.q("SELECT supplier_update($1,$2,$3,$4)", [str(f, "id"), str(f, "name"), str(f, "tin"), active]);
+  }))));
 }
 
 // ---------- Account administration (account owner) ----------
