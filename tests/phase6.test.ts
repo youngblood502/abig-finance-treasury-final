@@ -67,9 +67,9 @@ describe("administration", () => {
 });
 
 describe("supplier changes", () => {
-  it("a verifier or finance manager can correct a supplier, but not while requests are in progress", async () => {
-    await as(user.meron, async (c) => {
-      expect(await fails(c, "SELECT supplier_update($1,'X','0012345678',true)", [S_HAWASSA])).toMatch(/only a verifier or finance manager/);
+  it("a finance manager can correct a supplier, but not while requests are in progress", async () => {
+    await as(user.kebede, async (c) => {
+      expect(await fails(c, "SELECT supplier_update($1,'X','0012345678',true)", [S_HAWASSA])).toMatch(/you may not change suppliers/);
       await actAs(c, user.dawit);
       await c.query("SELECT supplier_update($1,'Ethio Chemicals Share Co','0023456789',true)", [S_ETHIO]);
       expect((await rows(c, "SELECT legal_name FROM suppliers WHERE id=$1", [S_ETHIO]))[0].legal_name).toBe("Ethio Chemicals Share Co");

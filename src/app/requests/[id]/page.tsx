@@ -92,7 +92,7 @@ export default async function RequestDetail({ params, searchParams }: { params: 
       <Card title="Details">
         <dl className="m-0 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Fact label="Total"><b>{etb(r.total_amount)}</b></Fact>
-          {r.supplier_id ? <Fact label="Supplier">{r.payee}<div className="text-xs text-muted-foreground">TIN {r.tin}</div></Fact>
+          {r.supplier_id ? <Fact label="Supplier">{r.payee}{r.tin && <div className="text-xs text-muted-foreground">TIN {r.tin}</div>}</Fact>
             : <Fact label="Person">{r.payee}<div className="text-xs text-muted-foreground">{r.person_phone}, ID {d.fullId ?? maskId(r.id_last4 ?? "")}</div></Fact>}
           <Fact label="Pays to">{payTo} {(r.bank_status ?? r.person_detail_status ?? "VERIFIED") !== "VERIFIED" && <Badge variant="destructive">Not verified</Badge>}</Fact>
           <Fact label="Debit account">{r.debit_label ? `${r.debit_label} · ${accountPlace({ account_kind: r.account_kind ?? undefined, bank_name: r.debit_bank, account_last4: r.debit_last4, wallet_phone: r.wallet_phone })}` : "Not chosen"} {holds && <Badge variant="secondary">Funds reserved</Badge>}</Fact>

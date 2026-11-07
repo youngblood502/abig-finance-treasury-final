@@ -1,83 +1,67 @@
 import { Flash, ShortfallChip } from "@/components";
-import Link from "next/link";
-import { grantAccess, registerAccount, revokeAccess, setAccountPolicy, setDepositAlert } from "../actions";
-import { companyScope } from "@/lib/company-scope";
-import { BalanceLog } from "@/components/treasury/balance-log";
+import { AccountPanel } from "@/components/accounts/account-panel";
+import { RegisterAccountForm } from "@/components/accounts/register-account-form";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table";
+import { PageHeader } from "@/components/ui/page-header";
 import { SidePanel } from "@/components/ui/side-panel";
+import { StatGrid, StatTile } from "@/components/ui/stat-tile";
+import { companyScope } from "@/lib/company-scope";
 import { RESERVED_LABEL, SHARED_RESERVED_HINT } from "@/lib/dashboard";
-import { ACCOUNT_KINDS, accountPlace, dtime, etb } from "@/lib/format";
 import { withUser } from "@/lib/db";
+import { ACCOUNT_KINDS, accountPlace, dtime, etb } from "@/lib/format";
 import { canAccess, requireAccess } from "@/lib/rbac";
-import { currentUserId, requireMe, hasPermission } from "@/lib/session";
-import { accountList } from "@/lib/treasury-screens";
+import { currentUserId, hasPermission, requireMe } from "@/lib/session";
+import { ACCESS_LABEL, accountList } from "@/lib/treasury-screens";
+
+const COLUMNS: DataColumn[] = [
+  { key: "account", header: "Account", primary: true, sortable: true }, { key: "kind", header: "Kind", sortable: true }, { key: "owner", header: "Legal owner", sortable: true }, { key: "access", header: "Your access" },
+  { key: "current", header: "Current", align: "right", sortable: true }, { key: "reserved", header: "Reserved", align: "right", sortable: true }, { key: "available", header: "Available", align: "right", sortable: true }, { key: "checked", header: "Last updated", sortable: true }, { key: "open", header: "" },
+];
+const FILTERS = [
+  { key: "kind", label: "Kind", options: Object.entries(ACCOUNT_KINDS).map(([value, label]) => ({ value, label })) },
+  { key: "sharing", label: "Sharing", options: [{ value: "shared", label: "Shared" }, { value: "single", label: "One company" }] },
+  { key: "status", label: "Status", options: [{ value: "active", label: "Active" }, { value: "inactive", label: "Inactive" }] },
+];
 
 export default async function Accounts({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams; const uid = await currentUserId(); const me = await requireMe();
   requireAccess(me, "/accounts");
   const company = await companyScope(uid);
-  const d = await withUser(uid, async (tx) => {
+  const d = await withUser(uid, async (tx) => ({
     // Who may update or manage an account is decided in the database (app_can_snapshot / app_can_manage_access).
-    const accounts = await accountList(tx, company);
-    const companies = await tx.q<{ id: string; legal_name: string }>("SELECT id, legal_name FROM company_directory() WHERE is_active");
-    return { accounts, companies };
+    accounts: await accountList(tx, company),
+    companies: await tx.q<{ id: string; legal_name: string }>("SELECT id, legal_name FROM company_directory() WHERE is_active"),
+  }));
+  const registrars = me.memberships.filter((m) => hasPermission(me, "bank_account:manage", m.company_id)).map((m) => ({ id: m.company_id, name: m.company }));
+  const active = d.accounts.filter((a) => a.is_active), anyShared = active.some((a) => a.users.length > 1), openWeek = canAccess(me, "/treasury");
+  const sum = (k: "current_balance" | "reserved_balance" | "available_balance") => active.reduce((s, a) => s + Number(a[k]), 0);
+  const rows: DataRow[] = d.accounts.map((a) => {
+    const shared = a.users.length > 1;
+    return {
+      id: a.id, search: `${a.account_label} ${accountPlace(a)} ${a.owner ?? ""}`, filters: { kind: a.account_kind, sharing: shared ? "shared" : "single", status: a.is_active ? "active" : "inactive" },
+      sort: { account: a.account_label, kind: ACCOUNT_KINDS[a.account_kind], owner: a.owner ?? "", current: Number(a.current_balance), reserved: Number(a.reserved_balance), available: Number(a.available_balance), checked: a.balance_updated_at?.getTime() ?? "" },
+      cells: {
+        account: <><b>{a.account_label}</b>{shared && <Badge variant="outline" className="ml-2">Shared</Badge>}{!a.is_active && <Badge variant="destructive" className="ml-2">Inactive</Badge>}<ShortfallChip amount={a.shortfall_amount} /><span className="block text-xs text-muted-foreground">{accountPlace(a)}</span></>,
+        kind: ACCOUNT_KINDS[a.account_kind], owner: a.owner ?? "None", access: ACCESS_LABEL[a.access], current: etb(a.current_balance), reserved: etb(a.reserved_balance), available: etb(a.available_balance),
+        checked: a.balance_updated_at ? dtime(a.balance_updated_at) : "Never", open: <AccountPanel a={a} openWeek={openWeek} companies={d.companies} />,
+      },
+    };
   });
-  const registrars = me.memberships.filter((m) => hasPermission(me, "bank_account:manage", m.company_id));
-  const active = d.accounts.filter((a) => a.is_active);
-  const anyShared = active.some((a) => a.users.length > 1);
-  const totalCurrent = active.reduce((s, a) => s + Number(a.current_balance), 0);
-  const totalReserved = active.reduce((s, a) => s + Number(a.reserved_balance), 0);
-  const totalAvailable = active.reduce((s, a) => s + Number(a.available_balance), 0);
   return (
     <>
-      <h1>Accounts</h1><p className="sub">One balance per account, however many companies share it.</p><Flash sp={sp} />
-      {d.accounts.length === 0 && <div className="card">No bank accounts are available to you.</div>}
-      {d.accounts.length > 0 && (<>
-        <h2>Account Cash Summary</h2>
-        <div className="figs">
-          <div className="card"><b>{etb(totalCurrent)}</b><span>Total current balance</span></div>
-          <div className="card"><b>{etb(totalReserved)}</b><span>{RESERVED_LABEL}{anyShared ? `. ${SHARED_RESERVED_HINT}` : ""}</span></div>
-          <div className="card"><b>{etb(totalAvailable)}</b><span>Net available cash (after minimum buffers)</span></div>
-        </div>
-        <p className="mute">Across {active.length} active account{active.length === 1 ? "" : "s"}. Each shared account is counted once.</p>
-      </>)}
-      {d.accounts.map((a) => (
-        <div className="card" key={a.id}>
-          <div className="row"><div><b>{a.account_label}</b> <span className="mute">{accountPlace(a)}</span><div className="mute">Legal owner: {a.owner ?? "none"}</div></div>
-            <div style={{ textAlign: "right" }}><b>{etb(a.available_balance)}</b><div className="mute">available</div></div></div>
-          <div className="figs" style={{ marginTop: 10 }}>
-            <div className="card"><b>{etb(a.current_balance)}</b><span>Current balance</span></div>
-            <div className="card"><b>{etb(a.reserved_balance)}</b><span>Reserved on this account{a.users.length > 1 ? ", all companies" : ""}</span></div>
-            <div className="card"><b>{etb(a.available_balance)}</b><span>Available (current minus reserved minus {etb(a.min_buffer)} buffer)</span></div>
-          </div>
-          <div className="mute">{a.balance_updated_at ? `Balance last updated ${dtime(a.balance_updated_at)}` : "No balance has been entered yet"}</div>
-          <div style={{ marginTop: 6 }}>{a.users.map((u) => <span className="chip" key={u.id}>{u.name}{u.is_owner ? " (owner)" : ""} can use{u.permissions.includes("RECORD_SNAPSHOT") ? " and update the balance" : ""}</span>)}
-            <ShortfallChip amount={a.shortfall_amount} />{!a.is_active && <span className="chip b">Inactive</span>}</div>
-          {a.is_active && (a.can_update || canAccess(me, "/treasury")) && <p style={{ marginTop: 10 }}><Link href={`/treasury/${a.id}`}>{a.can_update ? "Enter a balance check" : "Open this account's week"}</Link></p>}
-          <div style={{ marginTop: 10 }}><SidePanel title={`${a.account_label}: balance log`} description="The latest 25 entries." trigger={<Button variant="outline" size="sm">Balance log</Button>}><BalanceLog entries={a.history} access={a.access} pageSize={10} /></SidePanel></div>
-          {a.can_manage && (
-            <details style={{ marginTop: 10 }}><summary>Manage this account</summary>
-              <form action={setAccountPolicy} className="form" style={{ marginTop: 8 }}><input type="hidden" name="account" value={a.id} />
-                <label className="f">Minimum buffer to keep (ETB)<input name="buffer" type="number" min="0" step="0.01" defaultValue={Number(a.min_buffer)} /></label>
-                <button>Save policy</button></form>
-              <form action={setDepositAlert} className="form" style={{ marginTop: 8 }}><input type="hidden" name="account" value={a.id} />
-                <label className="f">Flag an implied deposit above (ETB)<input name="threshold" type="number" min="0.01" step="0.01" defaultValue={Number(a.large_deposit_threshold)} /></label>
-                <button>Save</button></form>
-              <h3 style={{ fontSize: 14 }}>Companies that share it</h3>
-              {a.users.filter((u) => !u.is_owner).map((u) => <div key={u.id} className="inline"><span className="chip">{u.name}{u.permissions.includes("RECORD_SNAPSHOT") ? " (can also update the balance)" : ""}</span><form action={revokeAccess}><input type="hidden" name="id" value={u.id} /><button className="sec">Withdraw</button></form></div>)}
-              <form action={grantAccess} className="form" style={{ marginTop: 8 }}><input type="hidden" name="account" value={a.id} />
-                <label className="f">Allow company<select name="company">{d.companies.filter((c) => !a.users.some((u) => u.name === c.legal_name)).map((c) => <option key={c.id} value={c.id}>{c.legal_name}</option>)}</select></label>
-                <label className="f">Also<span className="inline"><input type="checkbox" name="snapshot" />May update the balance</span></label><button>Grant access</button></form>
-            </details>)}
-        </div>))}
-      {registrars.length > 0 && (<>
-        <h2>Register an account</h2>
-        <p className="mute">A bank account needs its bank and last 4 digits, a Telebirr wallet its phone number, and a cash account only a name.</p>
-        <form action={registerAccount} className="card form"><label className="f">Owned by<select name="owner">{registrars.map((m) => <option key={m.company_id} value={m.company_id}>{m.company}</option>)}</select></label>
-          <label className="f">Type<select name="kind" defaultValue="BANK">{Object.entries(ACCOUNT_KINDS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
-          <label className="f">Account name<input name="label" required /></label><label className="f">Bank<input name="bank" /></label><label className="f">Last 4 digits<input name="last4" pattern="[0-9]{4}" maxLength={4} /></label>
-          <label className="f">Telebirr phone<input name="phone" type="tel" placeholder="0911 234 567" /></label>
-          <label className="f">Minimum buffer (ETB)<input name="buffer" type="number" min="0" step="0.01" defaultValue={0} /></label><button>Register</button></form></>)}
+      <PageHeader title="Accounts" description="One balance per account, however many companies share it."
+        action={registrars.length > 0 ? <SidePanel title="Register an account" description="The company that owns it can share it with others afterwards." trigger={<Button>Register an account</Button>}><div className="mt-3"><RegisterAccountForm owners={registrars} /></div></SidePanel> : undefined} />
+      <Flash sp={sp} />
+      {active.length > 0 && (
+        <StatGrid>
+          <StatTile label="Current balance" value={etb(sum("current_balance"))} hint={`${active.length} active account${active.length === 1 ? "" : "s"}. Each shared account is counted once`} />
+          <StatTile label={RESERVED_LABEL} value={etb(sum("reserved_balance"))} hint={anyShared ? SHARED_RESERVED_HINT : undefined} />
+          <StatTile label="Available" value={etb(sum("available_balance"))} hint="After minimum buffers" />
+        </StatGrid>
+      )}
+      <div className="rounded-xl border bg-card p-4"><DataTable caption="Accounts" columns={COLUMNS} rows={rows} filters={FILTERS} searchable pageSize={25} emptyMessage="No bank accounts are available to you." /></div>
     </>
   );
 }

@@ -65,7 +65,7 @@ export const accountDetail = async (tx: Tx, account: string) => {
   };
 };
 
-export interface AccountUser { id: string; account_id: string; name: string; is_owner: boolean; permissions: string[] }
+export interface AccountUser { id: string; account_id: string; company_id: string; name: string; is_owner: boolean; permissions: string[] }
 export interface AccountRow {
   id: string; account_label: string; account_kind: string; wallet_phone: string | null; bank_name: string | null; account_last4: string | null; min_buffer: string; large_deposit_threshold: string; is_active: boolean;
   current_balance: string; reserved_balance: string; available_balance: string; shortfall_amount: string; balance_updated_at: Date | null; owner_company_id: string | null; owner: string | null;
@@ -80,7 +80,7 @@ export const accountList = async (tx: Tx, company: string | null) => {
        FROM company_bank_accounts a LEFT JOIN banks b ON b.id = a.bank_id LEFT JOIN companies o ON o.id = account_owner_company(a.id)
       WHERE ${accountInCompany("a.id", "$1")} ORDER BY a.account_label`, [company]);
   const ids = accounts.map((a) => a.id);
-  const users = await tx.q<AccountUser>("SELECT g.id, g.account_id, c.legal_name AS name, g.is_owner, g.permissions FROM company_bank_account_access g JOIN companies c ON c.id = g.company_id WHERE g.account_id = ANY($1::uuid[]) AND g.revoked_at IS NULL ORDER BY g.is_owner DESC, c.legal_name", [ids]);
+  const users = await tx.q<AccountUser>("SELECT g.id, g.account_id, g.company_id, c.legal_name AS name, g.is_owner, g.permissions FROM company_bank_account_access g JOIN companies c ON c.id = g.company_id WHERE g.account_id = ANY($1::uuid[]) AND g.revoked_at IS NULL ORDER BY g.is_owner DESC, c.legal_name", [ids]);
   const history = await tx.q<LogRow & { account_id: string }>("SELECT a.id AS account_id, h.id, h.updated_at, h.previous_balance, h.new_balance, h.updated_by_name, h.request_no, h.entry_kind, h.bank_figure, h.outstanding_total, h.implied_deposit, h.anomalies FROM unnest($1::uuid[]) a(id) CROSS JOIN LATERAL account_balance_history(a.id, 25) h", [ids]);
   return accounts.map((a): AccountRow => ({ ...a, users: users.filter((u) => u.account_id === a.id), history: history.filter((h) => h.account_id === a.id) }));
 };
@@ -90,6 +90,7 @@ export const startsTicked = (p: Pick<OutstandingRow, "default_processed" | "tick
 
 /** Which payments a figure covers, in words. On a shared account the same number can mean different things to different people. */
 export const outstandingScope = (access: AccessLevel, shared: boolean) => (access === "NONE" ? "Your company only" : shared ? "All companies on this account" : "This account");
+export const ACCESS_LABEL: Record<AccessLevel, string> = { FULL: "All payments", TICK: "Ticks all payments", NONE: "Your company's payments" };
 export const ACCESS_NOTE: Record<AccessLevel, string | null> = {
   FULL: null,
   TICK: "This account is shared. You see every payment so you can tick it, but not who other companies pay.",
