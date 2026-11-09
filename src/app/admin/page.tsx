@@ -9,7 +9,8 @@ import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-t
 import { PageHeader } from "@/components/ui/page-header";
 import { SidePanel } from "@/components/ui/side-panel";
 import { SubmitButton } from "@/components/ui/submit-button";
-import { activity, companyList, peopleList, permissionList, roleLimit, roleList, signedInLocked, systemSettings } from "@/lib/admin";
+import { activity, companyList, notificationFilters, notificationList, notificationSummary, peopleList, permissionList, roleLimit, roleList, signedInLocked, systemSettings } from "@/lib/admin";
+import { NotificationMonitor } from "@/components/admin/notifications";
 import { withUser } from "@/lib/db";
 import { dtime } from "@/lib/format";
 import { requireAccess } from "@/lib/rbac";
@@ -72,10 +73,13 @@ async function Activity({ uid }: { uid: string }) {
   </>);
 }
 
-function System() {
+async function System({ uid, sp }: { uid: string; sp: Record<string, string | undefined> }) {
+  const filters = notificationFilters((k) => sp[k]);
+  const d = await withUser(uid, async (tx) => ({ summary: await notificationSummary(tx), rows: await notificationList(tx, filters) }));
   return (<>
     <Panel><dl className="m-0">{systemSettings().map((s) => <div key={s.label} className="flex justify-between gap-3 border-t py-2 text-sm first:border-t-0"><dt className="text-muted-foreground">{s.label}</dt><dd className="m-0 text-right font-semibold">{s.value}</dd></div>)}</dl></Panel>
     <p className="mute">These are set where the system is deployed, so they are shown here and not changed here.</p>
+    <NotificationMonitor summary={d.summary} rows={d.rows} filters={filters} />
   </>);
 }
 
@@ -108,7 +112,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<Re
       {tab === "companies" && <Companies uid={me.id} />}
       {tab === "roles" && <Roles uid={me.id} />}
       {tab === "activity" && <Activity uid={me.id} />}
-      {tab === "system" && <System />}
+      {tab === "system" && <System uid={me.id} sp={sp} />}
     </>
   );
 }
