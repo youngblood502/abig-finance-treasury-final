@@ -270,19 +270,24 @@ describe("notification outbox", () => {
     const a = await w(), b = await w();
     try {
       await a.query("BEGIN"); await b.query("BEGIN");
-      const ca = (await rows(a, "SELECT id FROM outbox_claim(2)")).map((r) => r.id);
+      const claimedA = await rows(a, "SELECT id, lease_token FROM outbox_claim(2)"), ca = claimedA.map((r) => r.id);
       const cb = (await rows(b, "SELECT id FROM outbox_claim(2)")).map((r) => r.id);
       expect(ca).toHaveLength(2); expect(cb).toHaveLength(1);
       expect(new Set([...ca, ...cb]).size).toBe(3);
       await a.query("COMMIT"); await b.query("COMMIT");
       expect(await rows(a, "SELECT id FROM outbox_claim(5)")).toHaveLength(0); // leased
-      await a.query("SELECT outbox_fail($1,'smtp timeout')", [ca[0]]);
-      await a.query("SELECT outbox_complete($1)", [ca[1]]);
+      await a.query("SELECT outbox_fail($1,$2,'smtp timeout')", [ca[0], claimedA[0].lease_token]);
+      // The other one is sent to one recipient, then finished.
+      expect((await rows(a, "SELECT outbox_begin_delivery($1,$2,$3,'dawit@abig.test') AS s", [ca[1], claimedA[1].lease_token, user.dawit]))[0].s).toBe("SEND");
+      await a.query("SELECT outbox_record_delivery($1,$2,$3,NULL)", [ca[1], claimedA[1].lease_token, user.dawit]);
+      expect((await rows(a, "SELECT outbox_finish($1,$2) AS s", [ca[1], claimedA[1].lease_token]))[0].s).toBe("DELIVERED");
       const f = (await rows(owner, "SELECT attempts, last_error, available_at > now() AS later, dead_at, delivered_at FROM notification_outbox WHERE id=$1", [ca[0]]))[0];
       expect(f).toMatchObject({ attempts: 1, last_error: "smtp timeout", later: true, dead_at: null });
       expect((await rows(owner, "SELECT delivered_at FROM notification_outbox WHERE id=$1", [ca[1]]))[0].delivered_at).not.toBeNull();
-      await owner.query("UPDATE notification_outbox SET attempts = 8 WHERE id=$1", [ca[0]]);
-      await a.query("SELECT outbox_fail($1,'still failing')", [ca[0]]);
+      await owner.query("UPDATE notification_outbox SET attempts = 7, available_at = now() WHERE id=$1", [ca[0]]);
+      const again = (await rows(a, "SELECT id, lease_token, attempts FROM outbox_claim(5)")).find((r) => r.id === ca[0])!;
+      expect(again.attempts).toBe(8);
+      expect((await rows(a, "SELECT outbox_fail($1,$2,'still failing') AS s", [ca[0], again.lease_token]))[0].s).toBe("DEAD");
       expect((await rows(owner, "SELECT dead_at FROM notification_outbox WHERE id=$1", [ca[0]]))[0].dead_at).not.toBeNull();
     } finally { await a.end(); await b.end(); await owner.query("DELETE FROM notification_outbox WHERE id = ANY($1)", [ids]); }
     await as(user.dawit, async (c) => {
