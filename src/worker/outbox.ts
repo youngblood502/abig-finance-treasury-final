@@ -9,6 +9,7 @@ const every = (ms: number, name: string, sql: string) => setInterval(() => pool.
 
 // Funds are released by the request itself (cancel, return, reject, authenticate), so there is nothing to sweep up any more.
 every(60 * 60_000, "queued overdue reminders", "SELECT enqueue_overdue_requests()");
+every(60 * 60_000, "queued missing opening balances", "SELECT enqueue_missing_openings()");
 every(15 * 60_000, "purged expired sessions", "SELECT purge_expired_sessions()");
 process.on("SIGTERM", () => { log("stopping"); pool.end().finally(() => process.exit(0)); });
 
