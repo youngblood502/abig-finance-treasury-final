@@ -1,4 +1,5 @@
 import { accountInCompany } from "./company";
+import type { NumberState } from "./account-numbers";
 import type { Tx } from "./db";
 
 // What the treasury screens read. Row-level security and app_account_access() decide what comes back; the screens only draw it.
@@ -67,14 +68,14 @@ export const accountDetail = async (tx: Tx, account: string) => {
 
 export interface AccountUser { id: string; account_id: string; company_id: string; name: string; is_owner: boolean; permissions: string[] }
 export interface AccountRow {
-  id: string; account_label: string; account_kind: string; wallet_phone: string | null; bank_name: string | null; account_last4: string | null; min_buffer: string; large_deposit_threshold: string; is_active: boolean;
+  id: string; account_label: string; account_kind: string; wallet_phone: string | null; bank_name: string | null; account_last4: string | null; number_state: NumberState; min_buffer: string; large_deposit_threshold: string; is_active: boolean;
   current_balance: string; reserved_balance: string; available_balance: string; shortfall_amount: string; balance_updated_at: Date | null; owner_company_id: string | null; owner: string | null;
   can_update: boolean; can_manage: boolean; access: AccessLevel; users: AccountUser[]; history: (LogRow & { account_id: string })[];
 }
 /** The accounts screen: every account with who shares it and its recent log, read in one pass rather than account by account. */
 export const accountList = async (tx: Tx, company: string | null) => {
   const accounts = await tx.q<Omit<AccountRow, "users" | "history">>(
-    `SELECT a.id, a.account_label, a.account_kind::text AS account_kind, a.wallet_phone, b.name AS bank_name, a.account_last4, a.min_buffer, a.large_deposit_threshold, a.is_active,
+    `SELECT a.id, a.account_label, a.account_kind::text AS account_kind, a.wallet_phone, b.name AS bank_name, a.account_last4, account_number_state(a.id) AS number_state, a.min_buffer, a.large_deposit_threshold, a.is_active,
             a.current_balance, a.reserved_balance, a.available_balance, a.shortfall_amount, a.balance_updated_at, o.id AS owner_company_id, o.legal_name AS owner,
             app_can_snapshot(a.id) AS can_update, app_can_manage_access(a.id) AS can_manage, app_account_access(a.id) AS access
        FROM company_bank_accounts a LEFT JOIN banks b ON b.id = a.bank_id LEFT JOIN companies o ON o.id = account_owner_company(a.id)

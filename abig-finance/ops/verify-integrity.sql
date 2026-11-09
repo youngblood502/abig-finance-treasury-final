@@ -70,6 +70,10 @@ WITH checks AS (
   UNION ALL SELECT 'person payment details verified by the person who entered them', count(*) FROM person_payment_details d WHERE d.verified_by = d.created_by
   -- Access.
   UNION ALL SELECT 'application role can read the balance log or statement figures directly', (has_table_privilege('abig_app', 'bank_balance_history', 'SELECT')::int + has_column_privilege('abig_app', 'treasury_weeks', 'statement_closing_balance', 'SELECT')::int)::bigint
+  UNION ALL SELECT 'application role can read or write encrypted account numbers directly', (has_column_privilege('abig_app', 'company_bank_accounts', 'account_number_enc', 'SELECT')::int
+    + has_column_privilege('abig_app', 'supplier_bank_details', 'account_number_enc', 'SELECT')::int + has_column_privilege('abig_app', 'person_payment_details', 'account_number_enc', 'SELECT')::int
+    + has_column_privilege('abig_app', 'company_bank_accounts', 'account_number_enc', 'INSERT,UPDATE')::int + has_column_privilege('abig_app', 'supplier_bank_details', 'account_number_enc', 'INSERT,UPDATE')::int
+    + has_column_privilege('abig_app', 'person_payment_details', 'account_number_enc', 'INSERT,UPDATE')::int)::bigint
   UNION ALL SELECT 'person holding a company-limited role in more companies than the role allows', count(*) FROM (
     SELECT cm.user_id, mr.role_id FROM membership_roles mr JOIN company_memberships cm ON cm.id = mr.membership_id AND cm.revoked_at IS NULL JOIN roles r ON r.id = mr.role_id
      WHERE r.max_companies IS NOT NULL GROUP BY cm.user_id, mr.role_id, r.max_companies HAVING count(DISTINCT cm.company_id) > r.max_companies) x

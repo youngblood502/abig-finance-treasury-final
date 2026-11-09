@@ -15,7 +15,7 @@ export function RegisterAccountForm({ owners }: { owners: { id: string; name: st
       <label className="f">Account name<input name="label" required /></label>
       {kind === "BANK" && (<>
         <label className="f">Bank<input name="bank" required /></label>
-        <label className="f">Last 4 digits<input name="last4" required pattern="[0-9]{4}" maxLength={4} inputMode="numeric" /></label>
+        <label className="f">Full account number<input name="account_number" required minLength={6} maxLength={40} inputMode="numeric" autoComplete="off" spellCheck={false} /><span className="text-xs font-normal text-muted-foreground">Encrypted when saved. Lists show only the last 4 digits.</span></label>
       </>)}
       {kind === "WALLET" && <label className="f">Telebirr phone<input name="phone" type="tel" required placeholder="0911 234 567" /></label>}
       <AmountInput name="buffer" label="Minimum buffer" defaultValue={0} />
