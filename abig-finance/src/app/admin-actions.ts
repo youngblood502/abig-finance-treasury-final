@@ -2,7 +2,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { adminBackPath } from "@/lib/admin";
+import { adminBackPath, isUuid } from "@/lib/admin";
 import { adminResetTotp, adminSetPassword, adminUnlock, revokeSessions } from "@/lib/auth";
 import { temporaryPassword } from "@/lib/crypto";
 import { withUser } from "@/lib/db";
@@ -128,5 +128,15 @@ export async function saveRolePermissions(f: FormData) {
     if (remove.length) await tx.q("DELETE FROM role_permissions WHERE role_id = $1 AND permission_id = ANY($2::uuid[])", [role, remove]);
     for (const p of add) await tx.q("INSERT INTO role_permissions (role_id, permission_id) VALUES ($1,$2)", [role, p]);
     await audit(tx, uid, "ROLE_PERMISSIONS_SET", role, { added: add.length, removed: remove.length }, "ROLE");
+  }));
+}
+
+// ---------- Notifications ----------
+/** Sends a failed or unanswered notification again. The database allows only those, keeps who was already sent it, and audits the retry. */
+export async function retryNotification(f: FormData) {
+  const id = str(f, "id"), back = str(f, "back").startsWith("/admin?tab=system") ? str(f, "back") : "/admin?tab=system";
+  return done(back, "Notification queued to be sent again.", () => admin(async (tx) => {
+    if (!isUuid(id)) throw new WorkflowError(404, "Notification not found.");
+    await tx.q("SELECT admin_notification_retry($1)", [id]);
   }));
 }

@@ -1,7 +1,7 @@
 {
   ".claude/launch.json": {
-    "mtime": 1794218391.822546,
-    "seen": 1794218424.590227,
+    "mtime": 1794227377.42364,
+    "seen": 1794227411.6519132,
     "ast_hash": "365291044390b8133af572f14d55b0c7",
     "semantic_hash": ""
   },
@@ -180,15 +180,15 @@
     "semantic_hash": ""
   },
   "abig-finance/src/app/admin-actions.ts": {
-    "mtime": 1794036721.797742,
-    "seen": 1794039461.053674,
-    "ast_hash": "f6ffa89c5c2bff0f55db44f5d7229ede",
+    "mtime": 1794226870.5930765,
+    "seen": 1794227411.6519132,
+    "ast_hash": "7b1fc39f41f5f761bf0f055c939d0146",
     "semantic_hash": ""
   },
   "abig-finance/src/app/admin/page.tsx": {
-    "mtime": 1794038176.0786996,
-    "seen": 1794039461.053674,
-    "ast_hash": "4ac87533a8b6b4776cde5a369d6f8acf",
+    "mtime": 1794226917.0762093,
+    "seen": 1794227411.6519132,
+    "ast_hash": "0b39bcbe50fb8e9adf381abb0ae12579",
     "semantic_hash": ""
   },
   "abig-finance/src/app/api/attachments/[id]/route.ts": {
@@ -1074,9 +1074,9 @@
     "semantic_hash": ""
   },
   "abig-finance/src/lib/admin.ts": {
-    "mtime": 1794036583.071738,
-    "seen": 1794039461.0546732,
-    "ast_hash": "f91faf7251dff40c41edbce72e00389a",
+    "mtime": 1794228211.6536398,
+    "seen": 1794228333.7702572,
+    "ast_hash": "144db64968ccf52f8395f42fee020801",
     "semantic_hash": ""
   },
   "abig-finance/tests/reports-admin.test.ts": {
@@ -1161,6 +1161,24 @@
     "mtime": 1794225252.8580024,
     "seen": 1794225455.9079225,
     "ast_hash": "18fd75ed2fd3add5159449e4d79ea182",
+    "semantic_hash": ""
+  },
+  "abig-finance/prisma/migrations/20261109000900_admin_notifications/migration.sql": {
+    "mtime": 1794226829.9289732,
+    "seen": 1794227411.6519132,
+    "ast_hash": "09cf6d79692dc0e6a74f54a903bb9761",
+    "semantic_hash": ""
+  },
+  "abig-finance/src/components/admin/notifications.tsx": {
+    "mtime": 1794227314.9706523,
+    "seen": 1794227411.6519132,
+    "ast_hash": "46b36ce3e4303eb72279180b2ec5872d",
+    "semantic_hash": ""
+  },
+  "abig-finance/tests/admin-notifications.test.ts": {
+    "mtime": 1794228235.248753,
+    "seen": 1794228333.7702572,
+    "ast_hash": "7f0ed3d6a3747d9c8e715cf36ded09bf",
     "semantic_hash": ""
   },
   "abig-finance/package-lock.json": {
