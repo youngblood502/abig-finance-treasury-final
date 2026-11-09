@@ -16,7 +16,8 @@ export function PayeeTabs({ active, suppliers, people }: { active: "suppliers" |
 
 export const Section = ({ title, children }: { title: string; children: React.ReactNode }) => <section className="mt-4"><h3 className="m-0 mb-2 text-base">{title}</h3>{children}</section>;
 
-export interface VersionItem { id: string; version: number; label: string; status: string; created_by: string; rejection_reason: string | null }
+/** label is plain text for dialogs; display, when given, is what the list shows instead (for example the account number with its eye button). */
+export interface VersionItem { id: string; version: number; label: string; display?: React.ReactNode; status: string; created_by: string; rejection_reason: string | null }
 /**
  * Every version of a payee's payment details. A second person must verify each one: it is offered to those who may, never to whoever entered it, and the database checks both.
  */
@@ -26,7 +27,7 @@ export function VersionList({ versions, canVerify, userId, verify, reject }: { v
     <ul className="m-0 flex list-none flex-col gap-2 p-0">
       {versions.map((v) => (
         <li key={v.id} className="rounded-md border bg-background p-3 text-sm">
-          <div className="flex flex-wrap items-center justify-between gap-2"><span><b>Version {v.version}</b> {v.label}</span><Badge variant={v.status === "VERIFIED" ? "default" : v.status === "PENDING" ? "warning" : "outline"}>{VERSION_STATUS[v.status] ?? v.status}</Badge></div>
+          <div className="flex flex-wrap items-center justify-between gap-2"><span><b>Version {v.version}</b> {v.display ?? v.label}</span><Badge variant={v.status === "VERIFIED" ? "default" : v.status === "PENDING" ? "warning" : "outline"}>{VERSION_STATUS[v.status] ?? v.status}</Badge></div>
           {v.rejection_reason && <p className="m-0 mt-1 text-muted-foreground">Rejected: {v.rejection_reason}</p>}
           {v.status === "PENDING" && v.created_by === userId && <p className="m-0 mt-1 text-muted-foreground">Someone else must verify this.</p>}
           {v.status === "PENDING" && v.created_by !== userId && canVerify && (

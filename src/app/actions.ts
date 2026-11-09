@@ -14,6 +14,7 @@ import { COMPANY_COOKIE, myCompanies } from "@/lib/company-scope";
 import { statementReturnPath } from "@/lib/reconciliation";
 import { canChangeSupplierStatus } from "@/lib/payee-screens";
 import { PERSON_DETAIL_FOR_METHOD, protectIdNumber } from "@/lib/payees";
+import { protectAccountNumber } from "@/lib/account-numbers";
 import { runWorkflow, type WorkflowAction } from "@/lib/workflow";
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
@@ -179,8 +180,11 @@ export async function linkSupplier(f: FormData) {
   return act("/suppliers", "Supplier linked to the company.", guard(["supplier:manage"], (uid) => dbl(withUser(uid, (tx) => tx.q("INSERT INTO company_suppliers (company_id, supplier_id, created_by) VALUES ($1,$2,$3)", [str(f, "company"), str(f, "supplier"), uid])))));
 }
 export async function addBankDetail(f: FormData) {
-  return act("/suppliers", "New bank details entered. They must be verified by someone else before use.", guard(["supplier:manage"], (uid) => dbl(withUser(uid, (tx) =>
-    tx.q("INSERT INTO supplier_bank_details (supplier_id, bank_name, account_last4, created_by) VALUES ($1,$2,$3,$4)", [str(f, "supplier"), str(f, "bank"), str(f, "last4"), uid])))));
+  return act("/suppliers", "New bank details entered. They must be verified by someone else before use.", guard(["supplier:manage"], (uid) => dbl(withUser(uid, (tx) => {
+    // A new version, PENDING until someone else verifies it. The full number is encrypted here; the database derives nothing from it.
+    const n = protectAccountNumber(str(f, "account_number"));
+    return tx.q("SELECT supplier_bank_detail_add($1,$2,$3,$4)", [str(f, "supplier"), str(f, "bank"), n.last4, n.enc]);
+  }))));
 }
 export async function verifyBankDetail(f: FormData) { return decideBankDetail(f, true); }
 export async function rejectBankDetail(f: FormData) { return decideBankDetail(f, false); }
@@ -241,8 +245,10 @@ export async function updatePerson(f: FormData) {
   }))));
 }
 export async function addPersonDetail(f: FormData) {
-  return act("/payees", "New payment details entered. They must be verified by someone else before use.", guard(["payee:manage"], (uid) => dbl(withUser(uid, (tx) =>
-    tx.q("SELECT person_detail_add($1,$2,$3,$4,$5)", [str(f, "person"), str(f, "kind"), str(f, "bank") || null, str(f, "last4") || null, str(f, "phone") || null])))));
+  return act("/payees", "New payment details entered. They must be verified by someone else before use.", guard(["payee:manage"], (uid) => dbl(withUser(uid, (tx) => {
+    const n = str(f, "kind") === "BANK" ? protectAccountNumber(str(f, "account_number")) : null;
+    return tx.q("SELECT person_detail_add($1,$2,$3,$4,$5,$6)", [str(f, "person"), str(f, "kind"), str(f, "bank") || null, n?.last4 ?? null, str(f, "phone") || null, n?.enc ?? null]);
+  }))));
 }
 export async function verifyPersonDetail(f: FormData) { return decidePersonDetail(f, true); }
 export async function rejectPersonDetail(f: FormData) { return decidePersonDetail(f, false); }
@@ -264,10 +270,19 @@ export async function updateSupplier(f: FormData) {
 // ---------- Account administration (account owner) ----------
 export async function registerAccount(f: FormData) {
   const kind = str(f, "kind"), buffer = Number(str(f, "buffer") || 0);
-  return act("/accounts", "Account registered. Enter its current balance before it is used.", guard(["bank_account:manage"], (uid) => dbl(withUser(uid, (tx) =>
-    kind === "CASH" ? tx.q("SELECT register_cash_account($1,$2,$3)", [str(f, "owner"), str(f, "label"), buffer])
+  return act("/accounts", "Account registered. Enter its current balance before it is used.", guard(["bank_account:manage"], (uid) => dbl(withUser(uid, (tx) => {
+    const n = kind === "CASH" || kind === "WALLET" ? null : protectAccountNumber(str(f, "account_number"));
+    return kind === "CASH" ? tx.q("SELECT register_cash_account($1,$2,$3)", [str(f, "owner"), str(f, "label"), buffer])
       : kind === "WALLET" ? tx.q("SELECT register_wallet_account($1,$2,$3,$4)", [str(f, "owner"), str(f, "label"), str(f, "phone"), buffer])
-      : tx.q("SELECT register_bank_account($1,$2,$3,$4,NULL,$5)", [str(f, "owner"), str(f, "bank"), str(f, "label"), str(f, "last4"), buffer])))));
+      : tx.q("SELECT register_bank_account($1,$2,$3,$4,$5,$6)", [str(f, "owner"), str(f, "bank"), str(f, "label"), n!.last4, n!.enc, buffer]);
+  }))));
+}
+/** The full number of an existing bank account, entered or corrected by the owner's managers. Encrypted here; only it and its last four digits change. */
+export async function setAccountNumber(f: FormData) {
+  return act("/accounts", "Account number saved.", guard(["bank_account:manage"], (uid) => dbl(withUser(uid, (tx) => {
+    const n = protectAccountNumber(str(f, "account_number"));
+    return tx.q("SELECT set_account_number($1,$2,$3,$4)", [str(f, "account"), n.last4, n.enc, str(f, "replace_last4") === "on"]);
+  }))));
 }
 export async function setAccountPolicy(f: FormData) {
   return act("/accounts", "Account policy saved.", guard(["bank_account:manage"], (uid) => dbl(withUser(uid, (tx) => tx.q("SELECT set_account_policy($1,$2)", [str(f, "account"), Number(str(f, "buffer") || 0)])))));

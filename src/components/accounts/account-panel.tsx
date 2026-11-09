@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { grantAccess, revokeAccess, setAccountPolicy, setDepositAlert } from "@/app/actions";
+import { grantAccess, revokeAccess, setAccountNumber, setAccountPolicy, setDepositAlert } from "@/app/actions";
 import { BalanceLog } from "@/components/treasury/balance-log";
 import { AmountInput } from "@/components/ui/amount-input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { AccountNumber } from "@/components/ui/reveal-number";
 import { SidePanel } from "@/components/ui/side-panel";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { accountPlace, dtime, etb } from "@/lib/format";
@@ -20,6 +21,7 @@ export function AccountPanel({ a, openWeek, companies }: { a: AccountRow; openWe
   return (
     <SidePanel title={a.account_label} description={accountPlace(a)} trigger={<Button variant="outline" size="sm">Details</Button>}>
       <dl className="m-0 mt-3">
+        {a.account_kind === "BANK" && <Line label="Account number" value={<AccountNumber kind="account" id={a.id} last4={a.account_last4} state={a.number_state} />} />}
         <Line label="Current balance" value={etb(a.current_balance)} />
         <Line label="Reserved" value={etb(a.reserved_balance)} />
         <Line label="Available" value={etb(a.available_balance)} />
@@ -51,6 +53,13 @@ export function AccountPanel({ a, openWeek, companies }: { a: AccountRow; openWe
       {a.can_manage && (
         <Section title="Settings">
           <div className="flex flex-col gap-3">
+            {a.account_kind === "BANK" && (
+              <form action={setAccountNumber} className="flex flex-col gap-2"><input type="hidden" name="account" value={a.id} />
+                <label className="f">{a.number_state === "RECORDED" ? "Correct the full account number" : "Enter the full account number"}<input name="account_number" required minLength={6} maxLength={40} inputMode="numeric" autoComplete="off" spellCheck={false} /><span className="text-xs font-normal text-muted-foreground">Encrypted when saved. The account, its access and its history stay as they are.</span></label>
+                <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="replace_last4" />The number no longer ends in {a.account_last4}</label>
+                <div><SubmitButton variant="outline" size="sm">Save account number</SubmitButton></div>
+              </form>
+            )}
             <form action={setAccountPolicy} className="flex flex-wrap items-end gap-2"><input type="hidden" name="account" value={a.id} /><AmountInput name="buffer" label="Minimum buffer to keep" defaultValue={Number(a.min_buffer)} /><SubmitButton variant="outline" size="sm">Save buffer</SubmitButton></form>
             <form action={setDepositAlert} className="flex flex-wrap items-end gap-2"><input type="hidden" name="account" value={a.id} /><AmountInput name="threshold" label="Flag an implied deposit above" defaultValue={Number(a.large_deposit_threshold)} required /><SubmitButton variant="outline" size="sm">Save limit</SubmitButton></form>
             {canGrant.length > 0 && (

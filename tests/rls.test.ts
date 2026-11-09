@@ -22,7 +22,7 @@ describe("company scope", () => {
   it("Daily Mart user sees only Daily Mart and no accounts", async () => {
     await as(user.bereket, async (c) => {
       expect((await rows(c, "SELECT code FROM companies")).map((r) => r.code)).toEqual(["DAILYMART"]);
-      expect(await rows(c, "SELECT * FROM company_bank_accounts")).toHaveLength(0);
+      expect(await rows(c, "SELECT id FROM company_bank_accounts")).toHaveLength(0);
     });
   });
   it("ASKU user cannot see users or memberships of BEES", async () => {

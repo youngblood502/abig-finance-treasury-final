@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AccountNumber, AccountPlaceNumber } from "@/components/ui/reveal-number";
 import { notFound } from "next/navigation";
 import { Flash } from "@/components";
 import { recordExecution, workflowAction } from "../../actions";
@@ -15,7 +16,7 @@ import { StatusTracker } from "@/components/ui/status-tracker";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { Timeline } from "@/components/ui/timeline";
 import { withUser } from "@/lib/db";
-import { accountPlace, dstr, dtime, etb, PAYMENT_METHODS } from "@/lib/format";
+import { dstr, dtime, etb, PAYMENT_METHODS } from "@/lib/format";
 import { maskId, revealIdNumber } from "@/lib/payees";
 import { requireAccess } from "@/lib/rbac";
 import { loadRequest, requestActions, requestHistory, stopReason } from "@/lib/requests";
@@ -45,7 +46,9 @@ export default async function RequestDetail({ params, searchParams }: { params: 
   const field = (action: string) => ({ id, version: String(r.version), action });
   const canDoSomething = Object.values(can).some(Boolean);
   const instRows: DataRow[] = d.installments.map((i) => ({ id: String(i.seq), cells: { seq: i.seq, due: dstr(i.due_date), amount: etb(i.amount) } }));
-  const payTo = r.person_kind === "TELEBIRR" ? `Telebirr ${r.telebirr_phone}` : r.person_kind === "BANK" ? `${r.person_bank} ••••${r.person_last4}` : r.bank_name ? `${r.bank_name} ••••${r.account_last4}` : "Not set";
+  const payTo = r.person_kind === "TELEBIRR" ? `Telebirr ${r.telebirr_phone}`
+    : r.person_kind === "BANK" ? <>{r.person_bank} <AccountNumber kind="person" id={r.person_payment_detail_id} last4={r.person_last4} state={r.person_number_state} /></>
+    : r.bank_name ? <>{r.bank_name} <AccountNumber kind="supplier" id={r.supplier_bank_detail_id} last4={r.account_last4} state={r.bank_number_state} /></> : "Not set";
   return (
     <>
       <p className="mute mb-2"><Link href={d.stage ? "/approvals" : "/requests"}>{d.stage ? "Approvals" : "Payment requests"}</Link> / {r.request_no}</p>
@@ -96,7 +99,7 @@ export default async function RequestDetail({ params, searchParams }: { params: 
           {d.restricted ? null : r.supplier_id ? <Fact label="Supplier">{r.payee}{r.tin && <div className="text-xs text-muted-foreground">TIN {r.tin}</div>}</Fact>
             : <Fact label="Person">{r.payee}<div className="text-xs text-muted-foreground">{r.person_phone}, ID {d.fullId ?? maskId(r.id_last4 ?? "")}</div></Fact>}
           {!d.restricted && <Fact label="Pays to">{payTo} {(r.bank_status ?? r.person_detail_status ?? "VERIFIED") !== "VERIFIED" && <Badge variant="destructive">Not verified</Badge>}</Fact>}
-          <Fact label="Debit account">{r.debit_label ? `${r.debit_label} · ${accountPlace({ account_kind: r.account_kind ?? undefined, bank_name: r.debit_bank, account_last4: r.debit_last4, wallet_phone: r.wallet_phone })}` : "Not chosen"} {holds && <Badge variant="secondary">Funds reserved</Badge>}</Fact>
+          <Fact label="Debit account">{r.debit_label && r.debit_account_id ? <>{r.debit_label} · <AccountPlaceNumber a={{ id: r.debit_account_id, account_kind: r.account_kind ?? undefined, bank_name: r.debit_bank, account_last4: r.debit_last4, wallet_phone: r.wallet_phone, number_state: r.debit_number_state }} /></> : "Not chosen"} {holds && <Badge variant="secondary">Funds reserved</Badge>}</Fact>
           <Fact label="Payment method">{PAYMENT_METHODS[r.payment_method] ?? r.payment_method}</Fact>
           <Fact label="Priority">{r.priority.toLowerCase()}</Fact>
           {!d.restricted && <Fact label="Invoice">{r.invoice_ref ?? "None"}{r.invoice_date ? `, ${dstr(r.invoice_date)}` : ""} {d.files.length === 0 && <Badge variant="warning">No document</Badge>}</Fact>}

@@ -1,4 +1,5 @@
 import { rejectPersonDetail, updatePerson, verifyPersonDetail } from "../actions";
+import { AccountNumber } from "@/components/ui/reveal-number";
 import { Flash } from "@/components";
 import { MethodList, PaymentHistory, PayeeTabs, Section, VersionList } from "@/components/payees/payee-parts";
 import { AddPersonForm, PersonDetailForm } from "@/components/payees/person-forms";
@@ -27,7 +28,7 @@ function PersonPanel({ p, userId, canManage, canVerify }: { p: PersonRow; userId
         <Line label="Phone" value={p.phone} /><Line label="ID number" value={maskId(p.id_last4)} /><Line label="Usually paid by" value={PAYMENT_METHODS[p.preferred_method]} /><Line label="Can be paid by" value={<MethodList methods={readyMethods(p.versions)} />} />
       </dl>
       <Section title="Bank and Telebirr details">
-        <VersionList userId={userId} canVerify={canVerify} verify={verifyPersonDetail} reject={rejectPersonDetail} versions={p.versions.map((v) => ({ ...v, label: versionLabel(v) }))} />
+        <VersionList userId={userId} canVerify={canVerify} verify={verifyPersonDetail} reject={rejectPersonDetail} versions={p.versions.map((v) => ({ ...v, label: versionLabel(v), display: v.kind === "BANK" ? <>{v.bank_name} <AccountNumber kind="person" id={v.id} last4={v.account_last4} state={v.number_state} /></> : undefined }))} />
         {canManage && <div className="mt-3"><PersonDetailForm person={p.id} /></div>}
       </Section>
       <Section title="Latest payments"><PaymentHistory lines={p.history} /></Section>

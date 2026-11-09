@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table";
 import { PageHeader } from "@/components/ui/page-header";
+import { AccountPlaceNumber } from "@/components/ui/reveal-number";
 import { SidePanel } from "@/components/ui/side-panel";
 import { StatGrid, StatTile } from "@/components/ui/stat-tile";
 import { companyScope } from "@/lib/company-scope";
@@ -43,7 +44,7 @@ export default async function Accounts({ searchParams }: { searchParams: Promise
       id: a.id, search: `${a.account_label} ${accountPlace(a)} ${a.owner ?? ""}`, filters: { kind: a.account_kind, sharing: shared ? "shared" : "single", status: a.is_active ? "active" : "inactive" },
       sort: { account: a.account_label, kind: ACCOUNT_KINDS[a.account_kind], owner: a.owner ?? "", current: Number(a.current_balance), reserved: Number(a.reserved_balance), available: Number(a.available_balance), checked: a.balance_updated_at?.getTime() ?? "" },
       cells: {
-        account: <><b>{a.account_label}</b>{shared && <Badge variant="outline" className="ml-2">Shared</Badge>}{!a.is_active && <Badge variant="destructive" className="ml-2">Inactive</Badge>}<ShortfallChip amount={a.shortfall_amount} /><span className="block text-xs text-muted-foreground">{accountPlace(a)}</span></>,
+        account: <><b>{a.account_label}</b>{shared && <Badge variant="outline" className="ml-2">Shared</Badge>}{!a.is_active && <Badge variant="destructive" className="ml-2">Inactive</Badge>}<ShortfallChip amount={a.shortfall_amount} /><span className="block text-xs text-muted-foreground"><AccountPlaceNumber a={a} /></span></>,
         kind: ACCOUNT_KINDS[a.account_kind], owner: a.owner ?? "None", access: ACCESS_LABEL[a.access], current: etb(a.current_balance), reserved: etb(a.reserved_balance), available: etb(a.available_balance),
         checked: a.balance_updated_at ? dtime(a.balance_updated_at) : "Never", open: <AccountPanel a={a} openWeek={openWeek} companies={d.companies} />,
       },
