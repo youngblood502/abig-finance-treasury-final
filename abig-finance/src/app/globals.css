@@ -1,30 +1,54 @@
-:root{--bg:#fff;--card:#F5F8F2;--ink:#16261B;--mute:#5E6F62;--line:#DCE5D6;--g:#7AC143;--gd:#2F7A33;--gl:#E6F3D9;--warn:#B45309;--warnbg:#FDF1DC;--bad:#B3261E;--badbg:#FBE4E2;
-box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-:root[data-theme="dark"]{color-scheme:dark;--bg:#0F1A12;--card:#16241A;--ink:#E7F0E8;--mute:#9DB1A1;--line:#25372A;--gd:#4E9A3A;--gl:#1E3322;--warnbg:#3A2E14;--badbg:#3B1D1B;--warn:#F0B35C;--bad:#F1948E}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Figtree,system-ui,-apple-system,"Segoe UI",sans-serif}
-a{color:var(--gd)}.shell{display:grid;grid-template-columns:230px 1fr;min-height:100vh}
-aside{background:var(--bg);border-right:1px solid var(--line);padding:20px 14px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:4px}
-aside img{width:110px;background:#fff;border-radius:8px;padding:4px;margin:0 6px 2px}aside small{margin:0 6px 18px;color:var(--mute)}
-aside a.nav{display:block;padding:9px 12px;border-radius:10px;color:var(--ink);text-decoration:none;font-weight:500}
-aside a.nav:hover{background:var(--gl)}aside .bottom{margin-top:auto;display:grid;gap:8px}
-main{padding:24px 28px;max-width:1150px;width:100%}h1{font-size:26px;margin:0 0 4px;letter-spacing:-.01em}h2{font-size:17px;margin:28px 0 10px}
-.sub{color:var(--mute);margin:0 0 18px}.mute{color:var(--mute);font-size:13px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:12px}
-.figs{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:12px}.figs .card{margin:0}.figs b{display:block;font-size:22px}.figs span{color:var(--mute);font-size:13px}
-.row{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}
-.chip{display:inline-block;padding:2px 10px;border-radius:99px;background:var(--gl);color:var(--gd);font-size:13px;font-weight:600;margin:2px 4px 2px 0}.chip.w{background:var(--warnbg);color:var(--warn)}.chip.o{background:var(--line);color:var(--ink)}.chip.b{background:var(--badbg);color:var(--bad)}
-.note{padding:10px 14px;border-radius:10px;margin-bottom:14px;font-weight:500}.note.bad{background:var(--badbg);color:var(--bad)}.note.ok{background:var(--gl);color:var(--gd)}
-button,.btn{font:inherit;font-weight:600;border:0;border-radius:9px;padding:8px 14px;background:var(--gd);color:#fff;cursor:pointer;text-decoration:none;display:inline-block}
-button.sec,.btn.sec{background:transparent;color:var(--ink);border:1px solid var(--line)}button.dng{background:var(--bad)}button:hover{filter:brightness(1.08)}
-:focus-visible{outline:3px solid var(--g);outline-offset:2px}
-input,select,textarea{font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);max-width:100%}
-label.f{display:grid;gap:4px;font-weight:500;font-size:13px;color:var(--mute)}label.f input,label.f select,label.f textarea{width:100%}
-.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;align-items:end}.inline{display:flex;gap:8px;flex-wrap:wrap;align-items:end}
-table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--mute);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.03em}td.n,th.n{text-align:right}
-.scroll{overflow-x:auto}.bar{display:flex;height:20px;border-radius:7px;overflow:hidden;background:var(--line);margin:10px 0 6px}.bar i{display:block}.k1{background:var(--gd)}.k2{background:#C9B458}.k3{background:var(--g)}
-.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--mute)}.legend u{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;text-decoration:none}
-details summary{cursor:pointer;font-weight:600}.tg{padding:7px 9px;line-height:0;background:var(--card);color:var(--ink);border:1px solid var(--line)}
-@media(max-width:800px){.shell{grid-template-columns:1fr}aside{position:static;height:auto;flex-direction:row;flex-wrap:wrap;align-items:center}aside small{display:none}aside .bottom{margin:0;width:100%}main{padding:16px}}
+/*
+ * Layer order: legacy.css sits below Tailwind's utilities, so the new components win where they are used and
+ * every existing screen keeps its styles until Phase 5 rebuilds it.
+ * Tailwind's preflight reset is left out on purpose: it would strip the default margins, list styles and heading
+ * weights those screens rely on. The reset below is the only part the new components need.
+ */
+@layer theme, base, legacy, components, utilities;
 
-main>div>h1:first-child{margin-top:0}code{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:1px 6px;word-break:break-all}
-aside a.nav .chip{padding:0 8px}
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@import "tw-animate-css";
+@import "./theme.css";
+@import "./legacy.css" layer(legacy);
+
+@source "../components";
+@source "../app";
+
+/* The theme is set on <html data-theme>, by the script in layout.tsx and by the theme toggle. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme inline {
+  --font-sans: "Figtree Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-brand: var(--brand);
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 0.875rem;
+}
+
+@layer base {
+  *, ::before, ::after, ::backdrop { box-sizing: border-box; border: 0 solid var(--border); }
+}

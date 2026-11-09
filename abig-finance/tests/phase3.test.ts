@@ -118,7 +118,7 @@ describe("return, reject and cancel", () => {
       const [id, v1] = await submitted(c);
       await actAs(c, user.dawit); expect(await fails(c, "SELECT wf_cancel($1,$2,'No longer needed')", [id, v1])).toMatch(/payment_request:create|only the creator/);
       await actAs(c, user.meron); await fn(c, "wf_cancel", id, v1, "No longer needed");
-      expect((await state(c, id)).s).toBe("REJECTED");
+      expect((await state(c, id)).s).toBe("CANCELLED");
       const [id2, w1] = await submitted(c);
       await actAs(c, user.dawit); const w2 = await fn(c, "wf_verify", id2, w1);
       await actAs(c, user.kebede); const w3 = await fn(c, "wf_authorize", id2, w2);

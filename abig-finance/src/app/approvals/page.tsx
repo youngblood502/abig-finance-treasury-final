@@ -1,52 +1,73 @@
 import Link from "next/link";
 import { Flash } from "@/components";
-import { workflowAction } from "../actions";
-import { dstr, dtime, etb } from "@/lib/format";
+import { ReviewActions } from "@/components/requests/review-actions";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table";
+import { PageHeader } from "@/components/ui/page-header";
+import { SidePanel } from "@/components/ui/side-panel";
+import { companyScope } from "@/lib/company-scope";
 import { withUser } from "@/lib/db";
+import { ageSince, dstr, dtime, etb, PAYMENT_METHODS } from "@/lib/format";
 import { requireAccess } from "@/lib/rbac";
-import { currentUserId, requireMe, hasPermission } from "@/lib/session";
+import { AGE_OPTIONS, ageBucket, reviewQueue, type ReviewRow } from "@/lib/requests";
+import { currentUserId, hasPermission, requireMe } from "@/lib/session";
 import { APPROVAL_STAGES, type ApprovalStage } from "@/lib/workflow";
+
+const COLUMNS: DataColumn[] = [
+  { key: "no", header: "Request", primary: true, sortable: true }, { key: "company", header: "Company", sortable: true }, { key: "payee", header: "Payee", sortable: true },
+  { key: "amount", header: "Amount", align: "right", sortable: true }, { key: "waiting", header: "Waiting", sortable: true }, { key: "review", header: "Review" },
+];
+const Fact = ({ label, children }: { label: string; children: React.ReactNode }) => <div className="flex justify-between gap-3 py-0.5 text-sm"><dt className="text-muted-foreground">{label}</dt><dd className="m-0 text-right">{children}</dd></div>;
+
+/** Everything needed to decide, beside the queue. */
+function ReviewPanel({ r, stage }: { r: ReviewRow; stage: ApprovalStage }) {
+  return (
+    <SidePanel title={`${r.request_no}: ${r.payee ?? "No payee"}`} description={r.company} trigger={<Button size="sm">Review</Button>}>
+      <dl className="m-0 rounded-md border bg-card p-3">
+        <Fact label="Amount"><b>{etb(r.total_amount)}</b></Fact>
+        <Fact label="Method">{PAYMENT_METHODS[r.method]}</Fact>
+        <Fact label="Debit account">{r.account_label ?? "Not chosen"}</Fact>
+        <Fact label="First due">{dstr(r.due)}</Fact>
+        <Fact label="Entered by">{r.creator ?? "Someone at the company"}</Fact>
+        {r.verifier && <Fact label="Verified by">{r.verifier}{r.verified_at ? `, ${dtime(r.verified_at)}` : ""}</Fact>}
+        <Fact label="Document">{r.document ? <a href={`/api/attachments/${r.document}`}>{r.document_name}</a> : <Badge variant="warning">No document</Badge>}</Fact>
+      </dl>
+      <ReviewActions stage={stage} back="approvals" target={{ id: r.request_id, requestNo: r.request_no, version: r.request_version, amount: r.total_amount, current: r.current_balance, reserved: r.reserved_balance }} />
+      <p className="m-0 text-sm"><Link href={`/requests/${r.request_id}`}>Open the full request</Link> to see its history or adjust it.</p>
+    </SidePanel>
+  );
+}
 
 export default async function Approvals({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams; const me = await requireMe();
   requireAccess(me, "/approvals");
-  // The database decides what is waiting for this person (app_actionable_requests): Finance Managers get RESERVED requests,
-  // Owners get VERIFIED ones, never their own and never one they already handled at the other stage.
-  const rows = await withUser(await currentUserId(), (tx) => tx.q<any>(
-    `SELECT a.*, c.legal_name AS company, s.legal_name AS supplier, u.full_name AS creator, vu.full_name AS verifier, r.verified_at,
-            da.account_label, da.account_last4, dk.name AS bank, da.available_balance,
-            (SELECT min(due_date) FROM payment_installments WHERE request_id = a.request_id) AS due
-     FROM app_actionable_requests() a JOIN payment_requests r ON r.id = a.request_id JOIN companies c ON c.id = a.debtor_company_id
-     JOIN suppliers s ON s.id = a.supplier_id LEFT JOIN users u ON u.id = r.created_by LEFT JOIN users vu ON vu.id = r.verified_by
-     LEFT JOIN company_bank_accounts da ON da.id = r.debit_account_id LEFT JOIN banks dk ON dk.id = da.bank_id ORDER BY a.waiting_since`));
+  // The database decides what is waiting: Finance Managers get reserved requests, Owners get verified ones, never their own and never one they handled at the other stage.
+  const uid = await currentUserId(), company = await companyScope(uid), now = new Date();
+  const queue = await withUser(uid, (tx) => reviewQueue(tx, company));
   const stages = (Object.keys(APPROVAL_STAGES) as ApprovalStage[]).filter((s) => hasPermission(me, APPROVAL_STAGES[s].permission));
+  const rowsFor = (stage: ApprovalStage): DataRow[] => queue.filter((r) => r.stage === stage).map((r) => ({
+    id: r.request_id, search: `${r.request_no} ${r.company} ${r.payee ?? ""}`, filters: { age: ageBucket(r.waiting_since, now) },
+    sort: { no: r.request_no, company: r.company, payee: r.payee ?? "", amount: Number(r.total_amount), waiting: r.waiting_since.getTime() },
+    cells: {
+      no: <Link href={`/requests/${r.request_id}`}>{r.request_no}</Link>, company: r.company,
+      payee: <>{r.payee}{!r.document && <Badge variant="warning" className="ml-2">No document</Badge>}</>,
+      amount: etb(r.total_amount), waiting: ageSince(r.waiting_since, now), review: <ReviewPanel r={r} stage={stage} />,
+    },
+  }));
   return (
     <>
-      <h1>Approvals</h1>
-      <p className="sub">Requests waiting for you. Open a request to inspect it, its documents and its history before you act.</p><Flash sp={sp} />
-      {stages.length === 0 && <div className="card">Approvals are done by Finance Managers (verification) and Owners (authentication). Your role has no approval step.</div>}
-      {stages.map((stage) => {
-        const st = APPROVAL_STAGES[stage]; const list = rows.filter((r) => r.stage === stage);
-        return (
-          <div key={stage}>
-            <h2>{st.title} <span className="mute">({st.role})</span></h2>
-            <div className="card scroll"><table><thead><tr><th>No.</th><th>Company</th><th>Supplier</th><th>Debit account</th><th className="n">Amount</th><th>First due</th><th>Entered by</th>{stage === "AUTHORIZATION" && <th>Verified by</th>}<th>Waiting since</th><th></th></tr></thead>
-              <tbody>{list.map((r) => (
-                <tr key={r.request_id}>
-                  <td><Link href={`/requests/${r.request_id}`}>{r.request_no}</Link><div className="mute"><Link href={`/requests/${r.request_id}`}>Inspect</Link></div></td>
-                  <td>{r.company}</td><td>{r.supplier}</td><td>{r.account_label ? `${r.account_label} · ${r.bank} ••••${r.account_last4}` : "—"}</td>
-                  <td className="n">{etb(r.total_amount)}</td><td>{dstr(r.due)}</td><td>{r.creator}</td>
-                  {stage === "AUTHORIZATION" && <td>{r.verifier}<div className="mute">{dtime(r.verified_at)}</div></td>}
-                  <td>{dtime(r.waiting_since)}</td>
-                  <td>
-                    <form action={workflowAction}><input type="hidden" name="id" value={r.request_id} /><input type="hidden" name="version" value={r.request_version} />
-                      <input type="hidden" name="action" value={st.action} /><input type="hidden" name="back" value="approvals" /><button>{st.label}</button></form>
-                    {stage === "AUTHORIZATION" && <div className="mute" style={{ maxWidth: 220 }}>Debits {etb(r.total_amount)} from the account and releases the reserved funds.</div>}
-                  </td>
-                </tr>))}
-                {list.length === 0 && <tr><td colSpan={stage === "AUTHORIZATION" ? 10 : 9} className="mute">Nothing is waiting for you.</td></tr>}</tbody></table></div>
-          </div>);
-      })}
+      <PageHeader title="Approvals" description="Requests waiting for you. Review each one before you act." />
+      <Flash sp={sp} />
+      {stages.length === 0 && <div className="rounded-xl border bg-card p-4">Approvals are done by Finance Managers (verification) and Owners (authentication). Your role has no approval step.</div>}
+      {stages.map((stage) => (
+        <section key={stage}>
+          <h2>{APPROVAL_STAGES[stage].title} <span className="mute">({APPROVAL_STAGES[stage].role})</span></h2>
+          <div className="rounded-xl border bg-card p-4">
+            <DataTable caption={APPROVAL_STAGES[stage].title} columns={COLUMNS} rows={rowsFor(stage)} searchable pageSize={15} filters={[{ key: "age", label: "Waiting", options: AGE_OPTIONS }]} emptyMessage="Nothing is waiting for you." />
+          </div>
+        </section>
+      ))}
     </>
   );
 }

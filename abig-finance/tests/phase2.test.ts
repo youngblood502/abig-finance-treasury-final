@@ -120,7 +120,7 @@ describe("submission rules", () => {
       const off = await draft(c, { ref: "B" }); await inst(c, off, 1, 900); await addAtt(c, off);
       expect(await fails(c, "SELECT wf_submit($1)", [off])).toMatch(/add up/);
       const noInv = await draft(c, { ref: "C" }); await inst(c, noInv, 1, 1000);
-      expect(await fails(c, "SELECT wf_submit($1)", [noInv])).toMatch(/invoice attachment/);
+      await submit(c, noInv);   // the document became optional in treasury Phase 2
       const unverified = await draft(c, { ref: "D", supplier: S_ADDIS, bank: BD_ADDIS }); await inst(c, unverified, 1, 1000); await addAtt(c, unverified);
       expect(await fails(c, "SELECT wf_submit($1)", [unverified])).toMatch(/verified supplier bank details/);
     });
@@ -158,7 +158,7 @@ describe("submission rules", () => {
       expect(await fails(c, "SELECT wf_submit($1)", [b])).toMatch(/duplicate key/);
     });
   });
-  it("a replaced invoice is allowed; the request needs a current invoice", async () => {
+  it("a replaced invoice is allowed", async () => {
     await as(user.meron, async (c) => {
       const id = await draft(c, { ref: "REPL" }); await inst(c, id, 1, 1000);
       const first = (await addAtt(c, id)).rows[0].id; await addAtt(c, id, { sup: first });

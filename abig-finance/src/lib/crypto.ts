@@ -71,3 +71,9 @@ export function decryptSecret(stored: string): string {
   const raw = Buffer.from(stored.replace(/^v1:/, ""), "base64"), d = createDecipheriv("aes-256-gcm", key(), raw.subarray(0, 12));
   d.setAuthTag(raw.subarray(12, 28)); return Buffer.concat([d.update(raw.subarray(28)), d.final()]).toString("utf8");
 }
+
+// ---------- Finding duplicates among encrypted values ----------
+/** A keyed hash, so equal values can be matched without being stored readably. Scoped, so the same value gives a different hash in each scope. */
+export function blindIndex(value: string, scope: string): string {
+  return createHmac("sha256", createHash("sha256").update("abig-blind-index:").update(key()).digest()).update(scope + "\0" + value).digest("hex");
+}

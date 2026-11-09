@@ -1,6 +1,8 @@
+import { addisIso } from "./format";
+
 // CSV with protection against spreadsheet formula injection: a cell that starts with = + - @ is prefixed so Excel treats it as text.
 const cell = (v: unknown) => {
-  let s = v instanceof Date ? v.toISOString() : v === null || v === undefined ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
+  let s = v instanceof Date ? addisIso(v) : v === null || v === undefined ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
   if (/^[=+\-@\t\r]/.test(s) && isNaN(Number(s))) s = "'" + s;
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };

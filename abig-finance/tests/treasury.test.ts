@@ -14,29 +14,28 @@ const draft = async (c: Client, amount: number, extra = {}) => { await actAs(c, 
 describe("balances and their history", () => {
   it("an Accountant enters the overall amount; available is recalculated and the update is logged", async () => {
     await as(user.meron, async (c) => {
-      expect(await bal(c)).toEqual({ current: 1150000, reserved: 0, available: 1150000 });
-      const h = (await rows(c, "SELECT previous_balance p, new_balance n, updated_by u, updated_at t FROM update_bank_balance($1, 2000000)", [AWASH]))[0];
+      expect(await bal(c)).toEqual({ current: 1150000, reserved: 0, available: 1050000 });
+      const h = (await rows(c, "SELECT previous_balance p, new_balance n, updated_by u, updated_at t FROM record_opening_balance($1, 2000000)", [AWASH]))[0];
       expect([Number(h.p), Number(h.n), h.u]).toEqual([1150000, 2000000, user.meron]); expect(h.t).toBeInstanceOf(Date);
-      expect(await bal(c)).toEqual({ current: 2000000, reserved: 0, available: 2000000 });
+      expect(await bal(c)).toEqual({ current: 2000000, reserved: 0, available: 1900000 });   // the ASKU Awash account keeps a 100,000 buffer
       expect((await rows(c, "SELECT previous_balance, new_balance, updated_by_name FROM account_balance_history($1)", [AWASH]))[0]).toMatchObject({ previous_balance: "1150000.0000", new_balance: "2000000.0000", updated_by_name: "Meron (ASKU accountant)" });
     });
   });
-  it("cannot be lowered below the reserved funds, cannot be negative or empty", async () => {
+  it("can go below the reserved funds, but cannot be negative or empty", async () => {
     await as(user.meron, async (c) => {
       const id = await draft(c, 400000); await fn(c, "wf_submit", id);
       expect((await bal(c)).reserved).toBe(400000);
-      expect(await fails(c, "SELECT update_bank_balance($1, 399999)", [AWASH])).toMatch(/cannot be lowered below the funds already reserved \(ETB 400,000.00\).*Resolve the pending payment requests/);
-      await c.query("SELECT update_bank_balance($1, 400000)", [AWASH]);                       // exactly the reserved amount is allowed
-      expect(await bal(c)).toEqual({ current: 400000, reserved: 400000, available: 0 });
-      expect(await fails(c, "SELECT update_bank_balance($1, -1)", [AWASH])).toMatch(/cannot be negative/);
-      expect(await fails(c, "SELECT update_bank_balance($1, NULL)", [AWASH])).toMatch(/enter the total amount/);
+      await c.query("SELECT record_opening_balance($1, 399999)", [AWASH]);                       // a shortfall: see phase1.test.ts
+      expect(await bal(c)).toEqual({ current: 399999, reserved: 400000, available: -100001 });
+      expect(await fails(c, "SELECT record_opening_balance($1, -1)", [AWASH])).toMatch(/cannot be negative/);
+      expect(await fails(c, "SELECT record_opening_balance($1, NULL)", [AWASH])).toMatch(/enter the total amount/);
     });
   });
   it("only an Accountant linked to the account with the update right can enter it", async () => {
-    await as(user.samuel, async (c) => { await c.query("SELECT update_bank_balance($1, 4300000)", [CBE]); });
-    await as(user.lidya, async (c) => { expect(await fails(c, "SELECT update_bank_balance($1, 1)", [CBE])).toMatch(/you may not update/); });   // ASKU may only use the BEES account
-    await as(user.abebe, async (c) => { expect(await fails(c, "SELECT update_bank_balance($1, 1)", [CBE])).toMatch(/you may not update/); }); // an Owner does not enter balances
-    await as(user.dawit, async (c) => { expect(await fails(c, "SELECT update_bank_balance($1, 1)", [AWASH])).toMatch(/you may not update/); });
+    await as(user.samuel, async (c) => { await c.query("SELECT record_opening_balance($1, 4300000)", [CBE]); });
+    await as(user.lidya, async (c) => { expect(await fails(c, "SELECT record_opening_balance($1, 1)", [CBE])).toMatch(/you may not update/); });   // ASKU may only use the BEES account
+    await as(user.abebe, async (c) => { expect(await fails(c, "SELECT record_opening_balance($1, 1)", [CBE])).toMatch(/you may not update/); }); // an Owner does not enter balances
+    await as(user.dawit, async (c) => { expect(await fails(c, "SELECT record_opening_balance($1, 1)", [AWASH])).toMatch(/you may not update/); });
   });
 });
 
@@ -44,15 +43,15 @@ describe("reserving funds when a request is submitted", () => {
   it("refuses an amount above the available balance and keeps nothing locked", async () => {
     await as(user.meron, async (c) => {
       const id = await draft(c, 1150001);
-      expect(await fails(c, "SELECT wf_submit($1)", [id])).toMatch(/requested amount \(ETB 1,150,001.00\) is more than the available balance \(ETB 1,150,000.00\)/);
-      expect(await state(c, id)).toBe("DRAFT"); expect(await bal(c)).toEqual({ current: 1150000, reserved: 0, available: 1150000 });
+      expect(await fails(c, "SELECT wf_submit($1)", [id])).toMatch(/requested amount \(ETB 1,150,001.00\) is more than the available balance \(ETB 1,050,000.00\)/);
+      expect(await state(c, id)).toBe("DRAFT"); expect(await bal(c)).toEqual({ current: 1150000, reserved: 0, available: 1050000 });
     });
   });
   it("moves the whole total (all instalments) from available into reserved, and allows exactly the available amount", async () => {
     await as(user.meron, async (c) => {
-      const id = await draft(c, 0, { amounts: [600000, 550000] });
+      const id = await draft(c, 0, { amounts: [600000, 450000] });
       await fn(c, "wf_submit", id);
-      expect(await state(c, id)).toBe("RESERVED"); expect(await bal(c)).toEqual({ current: 1150000, reserved: 1150000, available: 0 });
+      expect(await state(c, id)).toBe("RESERVED"); expect(await bal(c)).toEqual({ current: 1150000, reserved: 1050000, available: 0 });
       const more = await draft(c, 1, { ref: "ONE-MORE" });
       expect(await fails(c, "SELECT wf_submit($1)", [more])).toMatch(/more than the available balance \(ETB 0.00\)/);
     });
@@ -60,7 +59,7 @@ describe("reserving funds when a request is submitted", () => {
   it("requires a debit account the company is linked to", async () => {
     await as(user.meron, async (c) => {
       const none = await draft(c, 10, { account: null });
-      expect(await fails(c, "SELECT wf_submit($1)", [none])).toMatch(/choose the bank account/);
+      expect(await fails(c, "SELECT wf_submit($1)", [none])).toMatch(/choose the account/);
       await actAs(c, user.meron);
       expect(await fails(c, "UPDATE payment_requests SET debit_account_id=$2 WHERE id=$1", [none, "b0000000-0000-4000-8000-0000000000ff"])).toMatch(/not available to this company/);
       await c.query("UPDATE payment_requests SET debit_account_id=$2 WHERE id=$1", [none, CBE]);         // ASKU may use the shared BEES account
@@ -74,7 +73,7 @@ describe("reserving funds when a request is submitted", () => {
   it("releases the lock when the request is cancelled, returned or rejected, and resizes it when the amount is adjusted", async () => {
     await as(user.meron, async (c) => {
       const a = await draft(c, 300000); const v = await fn(c, "wf_submit", a);
-      await fn(c, "wf_cancel", a, v, "no longer needed"); expect(await state(c, a)).toBe("REJECTED"); expect((await bal(c)).reserved).toBe(0);
+      await fn(c, "wf_cancel", a, v, "no longer needed"); expect(await state(c, a)).toBe("CANCELLED"); expect((await bal(c)).reserved).toBe(0);
       const b = await draft(c, 300000, { ref: "B" }); const vb = await fn(c, "wf_submit", b);
       await actAs(c, user.dawit); await fn(c, "wf_return", b, vb, "fix the invoice"); expect((await bal(c)).reserved).toBe(0);
       await actAs(c, user.meron); expect(await state(c, b)).toBe("DRAFT");
@@ -93,9 +92,9 @@ describe("authenticating pays: the account is debited and the lock released", ()
     await as(user.meron, async (c) => {
       const { id } = await authorized(c, { amounts: [250000] }); await actAs(c, user.meron);
       expect(await state(c, id)).toBe("AUTHENTICATED");
-      expect(await bal(c)).toEqual({ current: 900000, reserved: 0, available: 900000 });
+      expect(await bal(c)).toEqual({ current: 900000, reserved: 0, available: 800000 });
       const r = (await rows(c, "SELECT verified_by, authenticated_by, verified_at, authenticated_at, request_payment_status(id) AS paid FROM payment_requests WHERE id=$1", [id]))[0];
-      expect([r.verified_by, r.authenticated_by, r.paid]).toEqual([user.dawit, user.kebede, "PAID"]); expect(r.authenticated_at).toBeInstanceOf(Date);
+      expect([r.verified_by, r.authenticated_by, r.paid]).toEqual([user.dawit, user.kebede, null]); expect(r.authenticated_at).toBeInstanceOf(Date);
       const h = (await rows(c, "SELECT previous_balance p, new_balance n, updated_by u, request_no FROM account_balance_history($1, 1)", [AWASH]))[0];
       expect([Number(h.p), Number(h.n), h.u, h.request_no]).toEqual([1150000, 900000, user.kebede, expect.stringMatching(/^PR-/)]);
     });
@@ -167,7 +166,7 @@ describe("strict roles: Accountant, Finance Manager, Owner, Administrator", () =
       expect(await fails(c, "SELECT wf_authorize($1,$2)", [id, v2])).toMatch(/already acted at the verification stage/);
       expect((await rows(c, "SELECT actor_role FROM approval_events WHERE request_id=$1 AND action='VERIFY'", [id]))[0].actor_role).toBe("ADMIN");
       await actAs(c, user.kebede); await fn(c, "wf_authorize", id, v2);
-      await actAs(c, user.admin); await c.query("SELECT update_bank_balance($1, 3000000)", [AWASH]);                  // and can enter balances anywhere
+      await actAs(c, user.admin); await c.query("SELECT record_opening_balance($1, 3000000)", [AWASH]);                  // and can enter balances anywhere
       expect(await fn(c, "admin_create_company", "ZZ", "Zed PLC", "7000000001", "+251900000001")).toBeTruthy();
       // an admin's own request cannot be approved by that admin
       const mine = await mk(c, user.admin, { amounts: [100] }); const vm = await fn(c, "wf_submit", mine);

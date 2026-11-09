@@ -155,24 +155,27 @@ model Bank {
 
 model BankAccount {
   id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  bankId                String   @map("bank_id") @db.Uuid
+  accountKind           AccountKind @default(BANK) @map("account_kind")
+  walletPhone           String?  @map("wallet_phone")
+  bankId                String?  @map("bank_id") @db.Uuid
   accountLabel          String   @map("account_label")
-  accountLast4          String   @map("account_last4") @db.Char(4)
+  accountLast4          String?  @map("account_last4") @db.Char(4)
   accountNumberEnc      Bytes?   @map("account_number_enc")
   currency              String   @default("ETB") @db.Char(3)
   isActive              Boolean  @default(true) @map("is_active")
   minBuffer             Decimal  @default(0) @map("min_buffer") @db.Decimal(19, 4)
-  ownerApprovalRequired Boolean  @default(false) @map("owner_approval_required")
   // Balances. currentBalance is typed in by the Accountant (bank's actual figure).
   currentBalance        Decimal  @default(0) @map("current_balance") @db.Decimal(19, 4)
   // Sum of amounts locked by active payment requests (RESERVED/VERIFIED). Maintained by the app inside the
   // same transaction as the status change. SQL: CHECK (reserved_balance >= 0)
   reservedBalance       Decimal  @default(0) @map("reserved_balance") @db.Decimal(19, 4)
-  // SQL: GENERATED ALWAYS AS (current_balance - reserved_balance) STORED. Never written by the app.
+  // SQL: GENERATED ALWAYS AS (current_balance - reserved_balance - min_buffer) STORED. Never written by the app.
   availableBalance      Decimal  @default(dbgenerated("0")) @map("available_balance") @db.Decimal(19, 4)
+  // SQL: GENERATED ALWAYS AS (GREATEST(reserved_balance - current_balance, 0)) STORED. Above zero blocks new submissions.
+  shortfallAmount       Decimal  @default(dbgenerated("0")) @map("shortfall_amount") @db.Decimal(19, 4)
   balanceUpdatedAt      DateTime? @map("balance_updated_at") @db.Timestamptz(6)
   createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  bank      Bank                @relation(fields: [bankId], references: [id])
+  bank      Bank?               @relation(fields: [bankId], references: [id])
   companies BankAccountAccess[] // many-to-many with Company via the junction
   paymentRequests PaymentRequest[]
   snapshots BankBalanceSnapshot[]
@@ -185,18 +188,110 @@ model BankAccount {
   @@map("company_bank_accounts")
 }
 
-// One row per balance update, written only by update_bank_balance() (SQL: append-only, no direct INSERT for the app role).
+// The balance log. Append-only, written only by the balance and workflow functions; no direct INSERT for the app role.
 model BankBalanceHistory {
   id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   accountId       String   @map("account_id") @db.Uuid
   previousBalance Decimal  @map("previous_balance") @db.Decimal(19, 4)
-  newBalance      Decimal  @map("new_balance") @db.Decimal(19, 4) // SQL: CHECK (new_balance >= 0); never below reservedBalance
+  newBalance      Decimal  @map("new_balance") @db.Decimal(19, 4) // the system balance, which an uncashed cheque can take below zero
+  entryKind       BalanceEntryKind @default(CHECK) @map("entry_kind")
+  weekId          String?  @map("week_id") @db.Uuid                // empty only on entries from before the weekly cycle
+  bankFigure      Decimal? @map("bank_figure") @db.Decimal(19, 4)
+  outstandingTotal Decimal? @map("outstanding_total") @db.Decimal(19, 4)
+  impliedDeposit  Decimal? @map("implied_deposit") @db.Decimal(19, 4)
+  anomalies       String[] @default([])
   updatedById     String   @map("updated_by") @db.Uuid
   updatedAt       DateTime @default(dbgenerated("clock_timestamp()")) @map("updated_at") @db.Timestamptz(6)
   account         BankAccount @relation(fields: [accountId], references: [id])
   updatedBy       User        @relation(fields: [updatedById], references: [id])
   @@index([accountId, updatedAt(sort: Desc)])
   @@map("bank_balance_history")
+}
+
+enum BalanceEntryKind {
+  OPENING
+  CHECK
+  PAYMENT
+  CANCEL_RELEASE
+  RECONCILIATION_ADJUSTMENT
+  @@map("balance_entry_kind")
+}
+enum TreasuryWeekStatus {
+  OPEN
+  RECONCILING
+  LOCKED
+  @@map("treasury_week_status")
+}
+enum ReconciliationLineKind {
+  PAYMENT
+  BANK_CHARGE
+  OTHER
+  CARRY
+  @@map("reconciliation_line_kind")
+}
+
+// One account's week, Monday to Sunday in Addis Ababa. Rows are written only by the database functions; a LOCKED row never changes.
+model TreasuryWeek {
+  id                      String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId               String   @map("account_id") @db.Uuid
+  weekStart               DateTime @map("week_start") @db.Date
+  status                  TreasuryWeekStatus @default(OPEN)
+  openingEntryId          String?  @map("opening_entry_id") @db.Uuid
+  statementClosingBalance Decimal? @map("statement_closing_balance") @db.Decimal(19, 4)
+  statementDepositsTotal  Decimal? @map("statement_deposits_total") @db.Decimal(19, 4)
+  depositExplanation      String?  @map("deposit_explanation")
+  revision                Int      @default(0)
+  startedById             String?  @map("started_by") @db.Uuid
+  startedAt               DateTime? @map("started_at") @db.Timestamptz(6)
+  preparedById            String?  @map("prepared_by") @db.Uuid
+  preparedAt              DateTime? @map("prepared_at") @db.Timestamptz(6)
+  returnReason            String?  @map("return_reason")
+  systemBalance           Decimal? @map("system_balance") @db.Decimal(19, 4)
+  unmatchedTotal          Decimal? @map("unmatched_total") @db.Decimal(19, 4)
+  impliedDepositsTotal    Decimal? @map("implied_deposits_total") @db.Decimal(19, 4)
+  adjustmentsTotal        Decimal? @map("adjustments_total") @db.Decimal(19, 4)
+  adjustmentPosted        Boolean? @map("adjustment_posted")
+  balanceDifference       Decimal? @map("balance_difference") @db.Decimal(19, 4)
+  depositDifference       Decimal? @map("deposit_difference") @db.Decimal(19, 4)
+  lockedById              String?  @map("locked_by") @db.Uuid
+  lockedAt                DateTime? @map("locked_at") @db.Timestamptz(6)
+  @@unique([accountId, weekStart])
+  @@map("treasury_weeks")
+}
+
+// One row per authenticated payment shown during a check. Append-only.
+model BalanceCheckItem {
+  id               String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entryId          String  @map("entry_id") @db.Uuid
+  accountId        String  @map("account_id") @db.Uuid
+  requestId        String  @map("request_id") @db.Uuid
+  companyId        String  @map("company_id") @db.Uuid
+  amount           Decimal @db.Decimal(19, 4)
+  defaultProcessed Boolean @map("default_processed")
+  processed        Boolean
+  @@unique([entryId, requestId])
+  @@map("balance_check_items")
+}
+
+// Matched payments, carried payments and the statement's other items. Never edited: a mistake is voided and entered again.
+model ReconciliationLine {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  weekId           String   @map("week_id") @db.Uuid
+  accountId        String   @map("account_id") @db.Uuid
+  kind             ReconciliationLineKind
+  requestId        String?  @map("request_id") @db.Uuid
+  companyId        String   @map("company_id") @db.Uuid
+  statementDate    DateTime? @map("statement_date") @db.Date
+  reference        String?
+  amount           Decimal  @db.Decimal(19, 4)
+  alreadyInBalance Boolean  @default(false) @map("already_in_balance")
+  reason           String?
+  createdById      String   @map("created_by") @db.Uuid
+  createdAt        DateTime @default(dbgenerated("clock_timestamp()")) @map("created_at") @db.Timestamptz(6)
+  voidedById       String?  @map("voided_by") @db.Uuid
+  voidedAt         DateTime? @map("voided_at") @db.Timestamptz(6)
+  voidReason       String?  @map("void_reason")
+  @@map("reconciliation_lines")
 }
 
 // Junction: one BankAccount <-> many Companies (and a Company has many accounts).
@@ -256,7 +351,7 @@ model AuditEvent {
 model Supplier {
   id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   legalName   String   @map("legal_name")
-  tin         String   @unique
+  tin         String?  @unique
   isActive    Boolean  @default(true) @map("is_active")
   createdById String   @map("created_by") @db.Uuid
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -308,7 +403,10 @@ model PaymentRequest {
   id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   requestNo            String   @unique @default(dbgenerated("('PR-' || lpad(nextval('payment_request_seq')::text, 6, '0'))")) @map("request_no")
   debtorCompanyId      String   @map("debtor_company_id") @db.Uuid
-  supplierId           String   @map("supplier_id") @db.Uuid
+  payeeType            PayeeType @default(SUPPLIER) @map("payee_type")
+  supplierId           String?  @map("supplier_id") @db.Uuid
+  personPayeeId        String?  @map("person_payee_id") @db.Uuid
+  personPaymentDetailId String? @map("person_payment_detail_id") @db.Uuid
   supplierBankDetailId String?  @map("supplier_bank_detail_id") @db.Uuid
   debitAccountId       String?  @map("debit_account_id") @db.Uuid   // SQL: CHECK (status = 'DRAFT' OR debit_account_id IS NOT NULL)
   createdById          String   @map("created_by") @db.Uuid         // the Accountant
@@ -316,6 +414,15 @@ model PaymentRequest {
   verifiedAt           DateTime? @map("verified_at") @db.Timestamptz(6)
   authenticatedById    String?  @map("authenticated_by") @db.Uuid   // the Owner
   authenticatedAt      DateTime? @map("authenticated_at") @db.Timestamptz(6)
+  paymentMethod        PaymentMethod @default(TRANSFER) @map("payment_method")
+  chequeNo             String?  @map("cheque_no")
+  bankReference        String?  @map("bank_reference")
+  bankProcessedAt      DateTime? @map("bank_processed_at") @db.Timestamptz(6)
+  bankProcessedById    String?  @map("bank_processed_by") @db.Uuid
+  balanceCheckId       String?  @map("balance_check_id") @db.Uuid
+  paidAt               DateTime? @map("paid_at") @db.Timestamptz(6)
+  paidById             String?  @map("paid_by") @db.Uuid
+  reconciliationId     String?  @map("reconciliation_id") @db.Uuid
   currency             String   @default("ETB") @db.Char(3)
   priority             String   @default("NORMAL")
   invoiceRef           String?  @map("invoice_ref")
@@ -327,7 +434,7 @@ model PaymentRequest {
   createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
   debtorCompany Company  @relation(fields: [debtorCompanyId], references: [id])
-  supplier      Supplier @relation(fields: [supplierId], references: [id])
+  supplier      Supplier? @relation(fields: [supplierId], references: [id])
   bankDetail    SupplierBankDetail? @relation(fields: [supplierBankDetailId], references: [id])
   debitAccount  BankAccount? @relation(fields: [debitAccountId], references: [id])
   createdBy     User     @relation("requestCreator", fields: [createdById], references: [id])
@@ -351,8 +458,32 @@ enum PaymentRequestStatus {
   RESERVED
   VERIFIED
   AUTHENTICATED
+  PAID
   REJECTED
+  CANCELLED
   @@map("payment_request_status")
+}
+
+enum PayeeType {
+  SUPPLIER
+  PERSON
+  @@map("payee_type")
+}
+
+enum AccountKind {
+  BANK
+  WALLET
+  CASH
+  @@map("account_kind")
+}
+
+// SQL only, see migration 20261106000000: person_payees and person_payment_details (raw SQL, reached through database functions).
+enum PaymentMethod {
+  TRANSFER
+  CHEQUE
+  CASH
+  TELEBIRR
+  @@map("payment_method")
 }
 
 model PaymentInstallment {

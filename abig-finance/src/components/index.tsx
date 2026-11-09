@@ -1,17 +1,13 @@
-import { etb, STATE_LABEL } from "@/lib/format";
+import { etb } from "@/lib/format";
 
 export function Flash({ sp }: { sp: { msg?: string; err?: string } }) {
   if (sp.err) return <div className="note bad" role="alert">{sp.err}</div>;
   if (sp.msg) return <div className="note ok" role="status">{sp.msg}</div>;
   return null;
 }
-export function StateChip({ state }: { state: string }) {
-  const cls = state === "AUTHENTICATED" ? "" : state === "REJECTED" ? "b" : "o";
-  return <span className={`chip ${cls}`}>{STATE_LABEL[state] ?? state}</span>;
-}
-export function PayChip({ status }: { status: string | null }) {
-  if (!status || status === "UNPAID") return null;
-  return <span className={`chip ${status === "PAID" ? "" : "w"}`}>{status === "PAID" ? "Paid" : "Partially paid"}</span>;
+/** Shown in red wherever an account appears while its balance is below the reserved funds. */
+export function ShortfallChip({ amount }: { amount: unknown }) {
+  return Number(amount) > 0 ? <span className="chip b">Shortfall {etb(amount)}: new submissions blocked</span> : null;
 }
 export function PositionBar({ p }: { p: { estimated_balance: string; active_reserved: string; min_buffer: string; available: string } }) {
   const total = Math.max(Number(p.estimated_balance), 1), pct = (v: string | number) => Math.min(100, Math.max(0, (Number(v) / total) * 100));

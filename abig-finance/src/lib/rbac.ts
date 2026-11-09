@@ -22,9 +22,12 @@ export const MODULES: Module[] = [
   { path: "/requests/new", label: "New payment request", nav: false, allow: (me) => can(me, "payment_request:create"), why: "Only Accountants create payment requests." },
   { path: "/requests", label: "Payment requests", nav: true, allow: (me) => can(me, "payment_request:view") || me.groupReport, why: "Your role cannot see payment requests." },
   { path: "/approvals", label: "Approvals", nav: true, allow: (me) => canAny(me, "payment_request:verify", "payment_request:authenticate"), why: "Approvals are for Finance Managers and Owners." },
-  { path: "/accounts", label: "Bank accounts", nav: true, allow: (me) => can(me, "bank_account:view") || me.groupReport, why: "Your role cannot see bank accounts." },
+  { path: "/accounts", label: "Accounts", nav: true, allow: (me) => can(me, "bank_account:view") || me.groupReport, why: "Your role cannot see bank accounts." },
+  { path: "/treasury", label: "Weekly treasury", nav: true, allow: (me) => canAny(me, "reconciliation:view", "bank_balance:update"), why: "Your role cannot see the weekly treasury." },
   { path: "/suppliers", label: "Suppliers", nav: true, allow: (me) => can(me, "supplier:view"), why: "Your role cannot see suppliers." },
+  { path: "/payees", label: "People", nav: true, allow: (me) => can(me, "payee:view"), why: "Your role cannot see people who are paid." },
   { path: "/reports", label: "Reports", nav: true, allow: (me) => can(me, "report:view") || me.groupReport, why: "Your role cannot see reports." },
+  { path: "/gallery", label: "Component gallery", nav: false, allow: (me) => me.isAdmin || process.env.NODE_ENV !== "production", why: "The component gallery is for administrators." },
   { path: "/admin", label: "Administration", nav: true, allow: (me) => me.isAdmin, why: "Only system administrators can use administration." },
 ];
 const moduleFor = (path: string) => MODULES.find((m) => m.path === "/" ? path === "/" : path === m.path || path.startsWith(m.path + "/"));
