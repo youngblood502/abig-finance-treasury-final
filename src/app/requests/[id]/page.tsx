@@ -34,7 +34,7 @@ export default async function RequestDetail({ params, searchParams }: { params: 
   const d = await withUser(uid, async (tx) => {
     const found = await loadRequest(tx, id);
     if (!found) return null;
-    const enc = found.r.person_payee_id ? (await tx.q<{ v: string | null }>("SELECT reveal_person_id($1) AS v", [id]))[0].v : null;   // logged; empty if this person may not see it
+    const enc = found.r.person_payee_id && !found.restricted ? (await tx.q<{ v: string | null }>("SELECT reveal_person_id($1) AS v", [id]))[0].v : null;   // logged; empty if this person may not see it
     return { ...found, fullId: enc ? revealIdNumber(enc) : null };
   });
   if (!d) notFound();
@@ -49,7 +49,7 @@ export default async function RequestDetail({ params, searchParams }: { params: 
   return (
     <>
       <p className="mute mb-2"><Link href={d.stage ? "/approvals" : "/requests"}>{d.stage ? "Approvals" : "Payment requests"}</Link> / {r.request_no}</p>
-      <PageHeader title={`${r.request_no}: ${r.payee ?? "No payee"}`} description={`${r.company}, entered by ${r.creator_name ?? "someone at the company"}`} action={<StatusBadge state={r.workflow_state} />} />
+      <PageHeader title={`${r.request_no}: ${r.payee ?? (d.restricted ? "Payee not shown" : "No payee")}`} description={`${r.company}, entered by ${r.creator_name ?? "someone at the company"}`} action={<StatusBadge state={r.workflow_state} />} />
       <Flash sp={sp} />
       {stopped && (
         <div role="status" className="mb-3 rounded-xl border border-warning bg-warning-soft p-4 text-sm text-foreground">
@@ -89,16 +89,17 @@ export default async function RequestDetail({ params, searchParams }: { params: 
       {r.workflow_state === "AUTHENTICATED" && <p className="mute">The account has been debited. This payment stays Authenticated until reconciliation finds it on the bank statement, and it can no longer be cancelled.</p>}
       {mine && r.workflow_state === "RESERVED" && <p className="mute">The funds are reserved and it is waiting for a Finance Manager. You cannot approve your own request.</p>}
 
+      {d.restricted && <p className="mute">With group reporting you see this request's amount, account, dates and status. Who is paid, the invoice and its documents, and who handled it show only to the company's members.</p>}
       <Card title="Details">
         <dl className="m-0 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Fact label="Total"><b>{etb(r.total_amount)}</b></Fact>
-          {r.supplier_id ? <Fact label="Supplier">{r.payee}{r.tin && <div className="text-xs text-muted-foreground">TIN {r.tin}</div>}</Fact>
+          {d.restricted ? null : r.supplier_id ? <Fact label="Supplier">{r.payee}{r.tin && <div className="text-xs text-muted-foreground">TIN {r.tin}</div>}</Fact>
             : <Fact label="Person">{r.payee}<div className="text-xs text-muted-foreground">{r.person_phone}, ID {d.fullId ?? maskId(r.id_last4 ?? "")}</div></Fact>}
-          <Fact label="Pays to">{payTo} {(r.bank_status ?? r.person_detail_status ?? "VERIFIED") !== "VERIFIED" && <Badge variant="destructive">Not verified</Badge>}</Fact>
+          {!d.restricted && <Fact label="Pays to">{payTo} {(r.bank_status ?? r.person_detail_status ?? "VERIFIED") !== "VERIFIED" && <Badge variant="destructive">Not verified</Badge>}</Fact>}
           <Fact label="Debit account">{r.debit_label ? `${r.debit_label} · ${accountPlace({ account_kind: r.account_kind ?? undefined, bank_name: r.debit_bank, account_last4: r.debit_last4, wallet_phone: r.wallet_phone })}` : "Not chosen"} {holds && <Badge variant="secondary">Funds reserved</Badge>}</Fact>
           <Fact label="Payment method">{PAYMENT_METHODS[r.payment_method] ?? r.payment_method}</Fact>
           <Fact label="Priority">{r.priority.toLowerCase()}</Fact>
-          <Fact label="Invoice">{r.invoice_ref ?? "None"}{r.invoice_date ? `, ${dstr(r.invoice_date)}` : ""} {d.files.length === 0 && <Badge variant="warning">No document</Badge>}</Fact>
+          {!d.restricted && <Fact label="Invoice">{r.invoice_ref ?? "None"}{r.invoice_date ? `, ${dstr(r.invoice_date)}` : ""} {d.files.length === 0 && <Badge variant="warning">No document</Badge>}</Fact>}
           {r.cheque_no && <Fact label="Cheque number">{r.cheque_no}</Fact>}
           {r.bank_reference && <Fact label="Bank reference">{r.bank_reference}</Fact>}
           {r.paid_at && <Fact label="Paid">{dtime(r.paid_at)}</Fact>}
@@ -107,9 +108,11 @@ export default async function RequestDetail({ params, searchParams }: { params: 
       </Card>
 
       <Card title="Installments"><DataTable caption="Installments" columns={INSTALLMENTS} rows={instRows} /></Card>
-      <Card title="Documents">
-        {d.files.length === 0 ? <p className="m-0 text-sm text-muted-foreground">No files.</p> : <ul className="m-0 list-none p-0">{d.files.map((f) => <li key={f.id} className="text-sm"><a href={`/api/attachments/${f.id}`}>{f.filename}</a> <span className="text-muted-foreground">{f.kind.toLowerCase()}, {dtime(f.uploaded_at)}{f.replaced ? ", replaced" : ""}</span></li>)}</ul>}
-      </Card>
+      {!d.restricted && (
+        <Card title="Documents">
+          {d.files.length === 0 ? <p className="m-0 text-sm text-muted-foreground">No files.</p> : <ul className="m-0 list-none p-0">{d.files.map((f) => <li key={f.id} className="text-sm"><a href={`/api/attachments/${f.id}`}>{f.filename}</a> <span className="text-muted-foreground">{f.kind.toLowerCase()}, {dtime(f.uploaded_at)}{f.replaced ? ", replaced" : ""}</span></li>)}</ul>}
+        </Card>
+      )}
       <Card title="History"><Timeline entries={requestHistory(d.approvals, d.adjustments)} /></Card>
     </>
   );

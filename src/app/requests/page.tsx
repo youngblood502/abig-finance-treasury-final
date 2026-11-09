@@ -8,7 +8,7 @@ import { companyScope } from "@/lib/company-scope";
 import { withUser } from "@/lib/db";
 import { dstr, etb, PAYMENT_METHODS, STATUS_SHORT } from "@/lib/format";
 import { canAccess, requireAccess } from "@/lib/rbac";
-import { filterAccounts, listRequests, parseRequestFilters, REQUEST_LIST_LIMIT } from "@/lib/requests";
+import { filterAccounts, listRequests, parseRequestFilters, PAYEE_HIDDEN, REQUEST_LIST_LIMIT } from "@/lib/requests";
 import { currentUserId, requireMe } from "@/lib/session";
 
 const COLUMNS: DataColumn[] = [
@@ -25,7 +25,7 @@ export default async function Requests({ searchParams }: { searchParams: Promise
   const rows: DataRow[] = d.list.map((r) => ({
     id: r.id, sort: { no: r.request_no, company: r.company, payee: r.payee ?? "", amount: Number(r.total_amount), account: r.account ?? "", due: r.due ?? "", status: r.workflow_state },
     cells: {
-      no: <Link href={`/requests/${r.id}`}>{r.request_no}</Link>, company: r.company, payee: r.payee, amount: etb(r.total_amount), account: r.account ?? "None yet", method: PAYMENT_METHODS[r.method], due: dstr(r.due),
+      no: <Link href={`/requests/${r.id}`}>{r.request_no}</Link>, company: r.company, payee: r.payee ?? <span className="text-muted-foreground">{PAYEE_HIDDEN}</span>, amount: etb(r.total_amount), account: r.account ?? "None yet", method: PAYMENT_METHODS[r.method], due: dstr(r.due),
       status: <span className="inline-flex flex-wrap gap-1"><StatusBadge state={r.workflow_state} />{r.priority !== "NORMAL" && <span className="text-xs text-muted-foreground">{r.priority.toLowerCase()}</span>}</span>,
     },
   }));

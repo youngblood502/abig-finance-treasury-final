@@ -1,9 +1,12 @@
 export interface CompanyOption { id: string; name: string }
 export const ALL_COMPANIES = "all";
 
-/** The companies a person works in or reports on. A company that only shares a bank account with theirs is not one of them. */
-export const MY_COMPANIES_SQL = `SELECT c.id, c.legal_name AS name FROM companies c
-  WHERE c.is_active AND (c.id IN (SELECT app_readable_companies()) OR app_is_admin()) ORDER BY c.legal_name`;
+/**
+ * The companies a person works in or reports on. A company that only shares a bank account with theirs is not one of them.
+ * A deactivated company stays in the list, after the active ones and marked, so its history can still be looked at on its own.
+ */
+export const MY_COMPANIES_SQL = `SELECT c.id, c.legal_name || CASE WHEN c.is_active THEN '' ELSE ' (inactive)' END AS name FROM companies c
+  WHERE c.id IN (SELECT app_readable_companies()) OR app_is_admin() ORDER BY NOT c.is_active, c.legal_name`;
 
 /**
  * Which company the lists should follow: an id, or null for everything the person may see.
