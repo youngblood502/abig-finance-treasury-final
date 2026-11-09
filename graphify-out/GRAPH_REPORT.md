@@ -1,25 +1,25 @@
 # Graph Report - abig-finance-treasury  (2026-11-09)
 
 ## Corpus Check
-- 196 files · ~164,063 words
+- 198 files · ~164,864 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 12 file(s) not represented in the graph (top: (none) 6, .css 3, .example 2)
 
 ## Summary
-- 1679 nodes · 5716 edges · 71 communities (55 shown, 16 thin omitted)
+- 1683 nodes · 5728 edges · 71 communities (55 shown, 16 thin omitted)
 - Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 82 edges (avg confidence: 0.86)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `07486934`
+- Built from commit: `02b7ad6f`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - admin/page.tsx
 - phase1.test.ts
-- reconciliation.ts
-- Operations guide
+- etb
+- Corporate treasury refactor
 - Payment Workflow Actions
 - users
 - SidePanel
@@ -32,11 +32,11 @@
 - TypeScript Compiler Config
 - account-numbers.test.ts
 - NPM Scripts
-- Runtime Dependencies
+- layout.tsx
 - Compose Database Service
-- Button
+- access-withdrawal-race.test.ts
 - Compose Migrate Service
-- SubmitButton
+- Button
 - shared-account-privacy.test.ts
 - 20261012000000_foundation/migration.sql
 - Compose Service Topology
@@ -56,44 +56,43 @@
 - Graphify Skill References
 - Notifications Worker Doc
 - Backup Script
-- account-panel.tsx
+- Operations guide
 - helpers.ts
 - ABIG Brand Logo
 - Supplier Bank Versioning
 - companies
 - 20261107000000_phase3_weekly_treasury/migration.sql
-- etb
+- session.ts
 - cn
 - weekly-treasury.test.ts
 - auth.ts
-- session.ts
-- actAs
+- Testing guide
+- phase2.test.ts
 - postcss.config.mjs
 - 20261109000800_more_notifications/migration.sql
 - company.ts
 - theme.test.ts
-- demo-controls.tsx
+- form.tsx
 - weekly-concurrency.test.ts
-- tailwindcss@4.2.4
-- @tailwindcss/postcss@4.2.4
+- Docker Compose deployment
+- Money rules live in the database
 - ops.test.ts
 - next.config.ts
-- tsx@^4.19.0
-- requests/[id]/page.tsx
+- requests.ts
 - treasury-screens.ts
-- format.ts
+- health/route.ts
 
 ## God Nodes (most connected - your core abstractions)
 1. `payment_requests` - 95 edges
 2. `Button()` - 80 edges
-3. `rows()` - 78 edges
+3. `rows()` - 79 edges
 4. `withUser()` - 77 edges
 5. `etb()` - 67 edges
 6. `Badge()` - 61 edges
 7. `company_bank_accounts` - 60 edges
 8. `users` - 52 edges
 9. `currentUserId()` - 51 edges
-10. `pg` - 46 edges
+10. `pg` - 47 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `graphify skill (root .claude)` --semantically_similar_to--> `graphify skill (abig-finance .claude)`  [INFERRED] [semantically similar]
@@ -119,30 +118,30 @@
 
 ### Community 0 - "admin/page.tsx"
 Cohesion: 0.06
-Nodes (81): addGroupGrant(), admin(), audit(), createCompany(), createRole(), createUser(), done(), resetMfa() (+73 more)
+Nodes (55): Activity(), AddAction(), Admin(), Companies(), Field(), Panel(), People(), Roles() (+47 more)
 
 ### Community 1 - "phase1.test.ts"
-Cohesion: 0.08
-Nodes (26): compose(), deliver(), Mail, makeSender(), NOTES, OutboxEvent, Sender, SUBJECTS (+18 more)
+Cohesion: 0.06
+Nodes (30): compose(), deliver(), Mail, makeSender(), NOTES, OutboxEvent, Sender, SUBJECTS (+22 more)
 
-### Community 2 - "reconciliation.ts"
-Cohesion: 0.09
-Nodes (32): accessLines(), dynamic, metadata, RootLayout(), AppShell(), accountInCompany(), navFor(), ROLE_LABEL() (+24 more)
+### Community 2 - "etb"
+Cohesion: 0.12
+Nodes (42): cells(), COLUMNS, Partial(), WeekOverview(), LIMITED, Reconciliation(), CorrectStatement(), ReviewDecision() (+34 more)
 
-### Community 3 - "Operations guide"
-Cohesion: 0.05
-Nodes (43): Encryption key (APP_ENCRYPTION_KEY), ops/backup.sh, Docker Compose deployment, Go-live checklist, /api/health, Money integrity check (ops/verify-integrity.sql), Known limits, Migration runner (ops/migrate.mjs) (+35 more)
+### Community 3 - "Corporate treasury refactor"
+Cohesion: 0.14
+Nodes (16): Corporate treasury refactor, 20261030000000_approvals, 20261031000000_rbac_admin, 20261029000000_request_reservation, Previous treasury engine (replaced), ABIG Corporate Treasury Requirement, update_bank_balance(), Authenticate debits the account (+8 more)
 
 ### Community 4 - "Payment Workflow Actions"
-Cohesion: 0.08
-Nodes (72): act(), addBankDetail(), addPerson(), addPersonDetail(), addReconciliationLine(), addSupplier(), adjustRequest(), createAndSubmitRequest() (+64 more)
+Cohesion: 0.07
+Nodes (78): act(), addBankDetail(), addPerson(), addPersonDetail(), addReconciliationLine(), addSupplier(), adjustRequest(), createAndSubmitRequest() (+70 more)
 
 ### Community 5 - "users"
 Cohesion: 0.10
 Nodes (35): app_member_companies(), company_memberships, users, company_role_users(), app_can_snapshot(), app_member_companies(), app_permitted_companies(), assert_role_company_limit() (+27 more)
 
 ### Community 6 - "SidePanel"
-Cohesion: 0.23
+Cohesion: 0.25
 Nodes (15): Brand(), MobileNav(), ICONS, SidebarNav(), Sidebar(), Sheet(), SheetContent(), SheetDescription() (+7 more)
 
 ### Community 7 - "Suppliers and Requests Schema"
@@ -154,12 +153,12 @@ Cohesion: 0.07
 Nodes (30): adjustment_history, adjustment_history_append_only, adjustment_history_no_truncate, adjustment_history_request_idx, app_actionable_requests(), app_can_edit_draft(), approval_events, approval_events_append_only (+22 more)
 
 ### Community 9 - "package.json"
-Cohesion: 0.09
-Nodes (30): devDependencies, esbuild@^0.24.0, @fontsource-variable/figtree@^5.3.0, prisma@^6.0.0, smtp-server@^3.19.22, tw-animate-css@^1.4.0, @types/node@^22.0.0, @types/nodemailer@^8.0.2 (+22 more)
+Cohesion: 0.05
+Nodes (60): dependencies, class-variance-authority@^0.7.1, clsx@^2.1.1, lucide-react@^1.69.0, next@^15.2.0, nodemailer@^10.1.1, pg@^8.13.0, qrcode@^1.5.4 (+52 more)
 
 ### Community 10 - "app/page.tsx"
-Cohesion: 0.17
-Nodes (28): Dashboard(), Panel(), QUEUE_COLUMNS, queueTable(), Section(), AccountRow, accountRows(), approvalQueue() (+20 more)
+Cohesion: 0.16
+Nodes (29): Dashboard(), Panel(), QUEUE_COLUMNS, queueTable(), Section(), accountInCompany(), AccountRow, accountRows() (+21 more)
 
 ### Community 11 - "20261015000000_treasury/migration.sql"
 Cohesion: 0.07
@@ -174,36 +173,36 @@ Cohesion: 0.11
 Nodes (18): compilerOptions, allowJs, esModuleInterop, incremental, isolatedModules, jsx, lib, module (+10 more)
 
 ### Community 14 - "account-numbers.test.ts"
-Cohesion: 0.09
-Nodes (26): normalizeAccountNumber(), MY_COMPANIES_SQL, likePattern(), listRequests(), loadRequest(), maskRequest(), parseRequestFilters(), stopReason() (+18 more)
+Cohesion: 0.10
+Nodes (36): GET(), money(), shown(), normalizeAccountNumber(), MY_COMPANIES_SQL, cell(), toCsv(), addisIso() (+28 more)
 
 ### Community 15 - "NPM Scripts"
 Cohesion: 0.14
 Nodes (14): scripts, bootstrap:admin, build, build:worker, check:integrity, db:demo, db:seed, demo:passwords (+6 more)
 
-### Community 16 - "Runtime Dependencies"
-Cohesion: 0.09
-Nodes (22): dependencies, class-variance-authority@^0.7.1, clsx@^2.1.1, lucide-react@^1.69.0, next@^15.2.0, nodemailer@^10.1.1, pg@^8.13.0, qrcode@^1.5.4 (+14 more)
+### Community 16 - "layout.tsx"
+Cohesion: 0.17
+Nodes (12): accessLines(), dynamic, metadata, RootLayout(), navFor(), ROLE_LABEL(), devUsers(), getMe() (+4 more)
 
 ### Community 17 - "Compose Database Service"
 Cohesion: 0.17
 Nodes (12): environment, healthcheck, image, restart, volumes, POSTGRES_DB, POSTGRES_PASSWORD, interval (+4 more)
 
-### Community 18 - "Button"
-Cohesion: 0.14
-Nodes (26): DemoConfirm(), CompanyPanel(), DevBanner(), VersionList(), Reason(), ReviewActions(), ReviewTarget, SendForReview() (+18 more)
+### Community 18 - "access-withdrawal-race.test.ts"
+Cohesion: 0.25
+Nodes (12): attempt(), connect(), draft(), granted(), held(), must(), noStranded(), raced() (+4 more)
 
 ### Community 19 - "Compose Migrate Service"
 Cohesion: 0.18
 Nodes (11): condition, db, APP_DB_PASSWORD, AUTH_DB_PASSWORD, MIGRATION_DATABASE_URL, WORKER_DB_PASSWORD, command, depends_on (+3 more)
 
-### Community 20 - "SubmitButton"
-Cohesion: 0.14
-Nodes (23): NewRequestForm(), newRow(), Step(), RegisterAccountForm(), METHODS, PersonDetailForm(), AdjustForm(), AdjustFormProps (+15 more)
+### Community 20 - "Button"
+Cohesion: 0.11
+Nodes (34): DemoConfirm(), DemoControls(), OPTIONS, AccountPanel(), canDo(), Line(), Section(), RegisterAccountForm() (+26 more)
 
 ### Community 21 - "shared-account-privacy.test.ts"
-Cohesion: 0.13
-Nodes (11): c, dir, files, files(), before, ids, snapshot(), before (+3 more)
+Cohesion: 0.07
+Nodes (18): c, dir, files, files(), ADMIN_URL, root, run(), url() (+10 more)
 
 ### Community 22 - "20261012000000_foundation/migration.sql"
 Cohesion: 0.08
@@ -214,8 +213,8 @@ Cohesion: 0.22
 Nodes (10): depends_on, restart, volumes, migrate, condition, services, app, worker (+2 more)
 
 ### Community 24 - "Badge"
-Cohesion: 0.09
-Nodes (41): COLUMNS, Payees(), COLUMNS, Company, NameField(), SupplierPanel(), Suppliers(), TinField() (+33 more)
+Cohesion: 0.13
+Nodes (35): COLUMNS, Line(), Payees(), PersonPanel(), versionLabel(), COLUMNS, Company, NameField() (+27 more)
 
 ### Community 25 - "components.json"
 Cohesion: 0.11
@@ -226,8 +225,8 @@ Cohesion: 0.16
 Nodes (11): cash_forecast_account_idx, cash_forecast_guard, cash_forecast_items, cash_forecast_no_delete, _forecast(), forecast_add(), forecast_cancel(), forecast_guard() (+3 more)
 
 ### Community 27 - "Badge"
-Cohesion: 0.13
-Nodes (28): COLUMNS, Gallery(), PAYMENTS, ROWS, Section(), SWATCHES, Card(), Fact() (+20 more)
+Cohesion: 0.09
+Nodes (41): COLUMNS, Gallery(), PAYMENTS, ROWS, Section(), SWATCHES, Card(), Fact() (+33 more)
 
 ### Community 28 - "suppliers"
 Cohesion: 0.08
@@ -258,16 +257,16 @@ Cohesion: 0.40
 Nodes (5): APP_URL, MAIL_FROM, SMTP_URL, WORKER_DATABASE_URL, environment
 
 ### Community 35 - "reports/page.tsx"
-Cohesion: 0.12
-Nodes (44): GET(), money(), shown(), Audit(), Download(), FilterBar(), Outstanding(), Panel() (+36 more)
+Cohesion: 0.18
+Nodes (29): Audit(), Cash(), Download(), FilterBar(), Outstanding(), Panel(), Payments(), Pending() (+21 more)
 
-### Community 42 - "account-panel.tsx"
-Cohesion: 0.26
-Nodes (11): Line(), PersonPanel(), versionLabel(), AccountPanel(), canDo(), Line(), Section(), AccountNumber() (+3 more)
+### Community 42 - "Operations guide"
+Cohesion: 0.27
+Nodes (10): ops/backup.sh, Go-live checklist, /api/health, Money integrity check (ops/verify-integrity.sql), Known limits, Operations guide, Restore drill (ops/restore-drill.sh), ABIG Finance (+2 more)
 
 ### Community 43 - "helpers.ts"
-Cohesion: 0.14
-Nodes (26): supplierList(), ASKU, BD_ADDIS, BD_ETHIO, BD_HAWASSA, BERBERO, BERBERO_ID, fails() (+18 more)
+Cohesion: 0.18
+Nodes (28): g, Tx, stopReason(), accountDetail(), accountList(), ASKU, authorized(), AWASH (+20 more)
 
 ### Community 48 - "companies"
 Cohesion: 0.17
@@ -277,85 +276,85 @@ Nodes (11): companies, admin_create_company(), auth_events, auth_events_append_o
 Cohesion: 0.05
 Nodes (45): account_balance_history(), bank_balance_history, bank_balance_history_account_id_updated_at_idx, bank_balance_history_no_change, bank_balance_history_no_truncate, update_bank_balance(), account_balance_history(), account_week_status() (+37 more)
 
-### Community 50 - "etb"
-Cohesion: 0.20
-Nodes (24): Accounts(), COLUMNS, FILTERS, Cash(), Card(), PaymentLine(), TreasuryAccount(), ACCOUNTS (+16 more)
+### Community 50 - "session.ts"
+Cohesion: 0.09
+Nodes (59): Accounts(), COLUMNS, FILTERS, setCompany(), Approvals(), COLUMNS, Fact(), ReviewPanel() (+51 more)
 
 ### Community 51 - "cn"
 Cohesion: 0.35
 Nodes (11): THEME_KEY, ThemeMenuItem(), initials(), UserMenu(), DropdownMenu(), DropdownMenuContent(), DropdownMenuItem(), DropdownMenuLabel() (+3 more)
 
 ### Community 52 - "weekly-treasury.test.ts"
-Cohesion: 0.09
-Nodes (33): attempt(), connect(), draft(), granted(), held(), must(), noStranded(), raced() (+25 more)
+Cohesion: 0.10
+Nodes (34): actAs(), fn(), key(), mk(), rows(), account(), before, ids (+26 more)
 
 ### Community 53 - "auth.ts"
 Cohesion: 0.08
-Nodes (57): Password(), Security(), back(), changePasswordAction(), disableMfaAction(), enableMfaAction(), loginAction(), logoutAction() (+49 more)
+Nodes (74): Password(), Security(), addGroupGrant(), admin(), audit(), createCompany(), createRole(), createUser() (+66 more)
 
-### Community 54 - "session.ts"
-Cohesion: 0.16
-Nodes (24): GET(), EditRequest(), cells(), COLUMNS, Partial(), WeekOverview(), LIMITED, Reconciliation() (+16 more)
+### Community 54 - "Testing guide"
+Cohesion: 0.22
+Nodes (10): Demo people, Local test copy setup, Testing guide, Things to try to break, UI and UX checklist, Workflow scenarios, company_bank_account_access, Legacy status and role mapping (+2 more)
 
-### Community 55 - "actAs"
-Cohesion: 0.16
-Nodes (18): actAs(), authorized(), fn(), key(), mk(), bal(), req(), setBalance() (+10 more)
+### Community 55 - "phase2.test.ts"
+Cohesion: 0.33
+Nodes (7): BD_ADDIS, BD_HAWASSA, addAtt(), draft(), inst(), key(), ready()
 
 ### Community 58 - "20261109000800_more_notifications/migration.sql"
 Cohesion: 0.19
 Nodes (12): account_access_notify, enqueue_missing_openings(), notify_account_access(), notify_person_details_pending(), notify_supplier_details_pending(), notify_user_account(), person_payment_details_notify, public.lock_week() (+4 more)
 
 ### Community 59 - "company.ts"
-Cohesion: 0.32
-Nodes (8): ShellProps, CompanySwitcher(), Header(), label(), TableLabels(), ALL_COMPANIES, CompanyOption, NavItem
+Cohesion: 0.29
+Nodes (9): AppShell(), ShellProps, CompanySwitcher(), DevBanner(), Header(), label(), TableLabels(), ALL_COMPANIES (+1 more)
 
 ### Community 60 - "theme.test.ts"
 Cohesion: 0.28
 Nodes (7): channel(), contrast(), css, luminance(), SHAPES, TEXT, themes
 
-### Community 61 - "demo-controls.tsx"
-Cohesion: 0.39
-Nodes (6): DemoControls(), OPTIONS, SearchableSelect(), SearchableSelectProps, filterOptions(), SelectOption
+### Community 61 - "form.tsx"
+Cohesion: 0.24
+Nodes (11): NewRequestForm(), newRow(), Step(), SearchableSelect(), SearchableSelectProps, METHODS_FOR_KIND, compare(), filterOptions() (+3 more)
 
 ### Community 62 - "weekly-concurrency.test.ts"
-Cohesion: 0.16
-Nodes (16): addDetail(), asPerson(), balance(), state(), authenticated(), balance(), monday(), newAccount() (+8 more)
+Cohesion: 0.15
+Nodes (17): addDetail(), addPerson(), asPerson(), balance(), state(), authenticated(), balance(), monday() (+9 more)
+
+### Community 63 - "Docker Compose deployment"
+Cohesion: 0.40
+Nodes (5): Encryption key (APP_ENCRYPTION_KEY), Docker Compose deployment, Migration runner (ops/migrate.mjs), Sign-in security policy, Built-in sign-in
 
 ### Community 65 - "ops.test.ts"
-Cohesion: 0.15
-Nodes (11): b, c, [email, ...nameParts], name, temp, c, hashPassword(), ADMIN_URL (+3 more)
+Cohesion: 0.24
+Nodes (7): b, c, [email, ...nameParts], name, temp, c, hashPassword()
 
-### Community 69 - "requests/[id]/page.tsx"
-Cohesion: 0.09
-Nodes (36): setCompany(), Approvals(), COLUMNS, Fact(), ReviewPanel(), NewRequest(), COLUMNS, Requests() (+28 more)
+### Community 69 - "requests.ts"
+Cohesion: 0.08
+Nodes (33): revealAccountNumber(), RevealResult, AccountNumber(), HIDE_AFTER_MS, maskNumber(), RevealNumber(), isNumberKind(), NumberKind (+25 more)
 
 ### Community 72 - "treasury-screens.ts"
-Cohesion: 0.14
-Nodes (20): Tx, ACCESS_LABEL, ACCESS_NOTE, accountDetail(), AccountFacts, accountList(), AccountRow, AccountUser (+12 more)
-
-### Community 73 - "format.ts"
 Cohesion: 0.12
-Nodes (20): dynamic, BalanceLog(), BalanceLogEntry, COLUMNS, DataColumn, DataFilter, DataRow, DataTableProps (+12 more)
+Nodes (16): ACCESS_LABEL, ACCESS_NOTE, AccountFacts, AccountUser, DUE_OPTIONS, FigureInput, LogRow, OutstandingRow (+8 more)
 
 ## Knowledge Gaps
 - **19 isolated node(s):** `RFC-6238`, `/api/health`, `Money integrity check (ops/verify-integrity.sql)`, `Migration runner (ops/migrate.mjs)`, `Local test copy setup` (+14 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 385 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 388 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
 - **16 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `pg` connect `phase1.test.ts` to `admin/page.tsx`, `ops.test.ts`, `reconciliation.ts`, `treasury-screens.ts`, `package.json`, `format.ts`, `helpers.ts`, `app/page.tsx`, `account-numbers.test.ts`, `Runtime Dependencies`, `weekly-treasury.test.ts`, `auth.ts`, `shared-account-privacy.test.ts`, `session.ts`, `actAs`, `weekly-concurrency.test.ts`?**
-  _High betweenness centrality (0.053) - this node is a cross-community bridge._
+- **Why does `pg` connect `helpers.ts` to `admin/page.tsx`, `ops.test.ts`, `phase1.test.ts`, `package.json`, `app/page.tsx`, `account-numbers.test.ts`, `session.ts`, `access-withdrawal-race.test.ts`, `weekly-treasury.test.ts`, `auth.ts`, `shared-account-privacy.test.ts`, `phase2.test.ts`, `Badge`, `weekly-concurrency.test.ts`?**
+  _High betweenness centrality (0.071) - this node is a cross-community bridge._
 - **What connects `RFC-6238`, `/api/health`, `Money integrity check (ops/verify-integrity.sql)` to the rest of the system?**
   _19 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `admin/page.tsx` be split into smaller, more focused modules?**
-  _Cohesion score 0.05627705627705628 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.05789235639981909 - nodes in this community are weakly interconnected._
 - **Why does `payment_requests` connect `Suppliers and Requests Schema` to `users`, `Workflow Schema and Adjustments`, `20261015000000_treasury/migration.sql`, `20261106000000_phase2_payees_accounts/migration.sql`, `companies`, `20261107000000_phase3_weekly_treasury/migration.sql`, `20261012000000_foundation/migration.sql`, `20261016000000_scheduler/migration.sql`, `suppliers`, `20261105000100_phase1_money_logic/migration.sql`?**
-  _High betweenness centrality (0.031) - this node is a cross-community bridge._
+  _High betweenness centrality (0.035) - this node is a cross-community bridge._
 - **Should `phase1.test.ts` be split into smaller, more focused modules?**
-  _Cohesion score 0.07692307692307693 - nodes in this community are weakly interconnected._
-- **Why does `next` connect `etb` to `admin/page.tsx`, `next.config.ts`, `reconciliation.ts`, `Payment Workflow Actions`, `requests/[id]/page.tsx`, `reports/page.tsx`, `SidePanel`, `package.json`, `app/page.tsx`, `account-panel.tsx`, `Runtime Dependencies`, `Button`, `cn`, `auth.ts`, `session.ts`, `Badge`, `Badge`?**
-  _High betweenness centrality (0.028) - this node is a cross-community bridge._
-- **Should `reconciliation.ts` be split into smaller, more focused modules?**
-  _Cohesion score 0.09103840682788052 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.0613107822410148 - nodes in this community are weakly interconnected._
+- **Why does `users` connect `users` to `20261109000800_more_notifications/migration.sql`, `Suppliers and Requests Schema`, `Workflow Schema and Adjustments`, `20261015000000_treasury/migration.sql`, `20261106000000_phase2_payees_accounts/migration.sql`, `companies`, `20261107000000_phase3_weekly_treasury/migration.sql`, `20261012000000_foundation/migration.sql`, `20261016000000_scheduler/migration.sql`, `suppliers`, `20261105000100_phase1_money_logic/migration.sql`?**
+  _High betweenness centrality (0.023) - this node is a cross-community bridge._
+- **Should `etb` be split into smaller, more focused modules?**
+  _Cohesion score 0.12025901942645699 - nodes in this community are weakly interconnected._

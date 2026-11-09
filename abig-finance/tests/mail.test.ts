@@ -21,7 +21,7 @@ describe("email delivery", () => {
     const send = async (m: any) => { await transport.sendMail({ from: "ABIG <x@y.test>", ...m }); };
     const transport = nodemailer.createTransport({ host: "127.0.0.1", port, secure: false, tls: { rejectUnauthorized: false } });
     expect(await tick(pool, send, "https://finance.example.com")).toBeGreaterThanOrEqual(3);
-    const authorizedMail = inbox.filter((m) => /authorized and ready to be funded/.test(m.subject));
+    const authorizedMail = inbox.filter((m) => /is authenticated and ready to be paid/.test(m.subject));
     expect(authorizedMail.map((m) => m.to).sort()).toEqual(["lidya@abig.test", "meron@abig.test", "yared@abig.test"]); // the company accountants (including the creator)
     expect(authorizedMail[0].text).toContain(`https://finance.example.com/requests/${a.id}`);
     expect(inbox.filter((m) => /waiting for verification/.test(m.subject)).map((m) => m.to).sort()).toEqual(["dawit@abig.test", "yared@abig.test"]);
