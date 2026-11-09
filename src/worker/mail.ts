@@ -21,8 +21,8 @@ const SUBJECTS: Record<string, (e: OutboxEvent) => string> = {
   REQUEST_SUBMITTED: (e) => `${e.payload.request_no} is waiting for verification`,
   REQUEST_RESTARTED: (e) => `${e.payload.request_no} changed and needs verification again`,
   REQUEST_VERIFIED: (e) => `${e.payload.request_no} is waiting for authorization`,
-  REQUEST_AUTHORIZED: (e) => `${e.payload.request_no} is authorized and ready to be funded`,
-  REQUEST_RESCHEDULE_NEEDED: (e) => `${e.payload.request_no}: a due date changed, please confirm funding again`,
+  REQUEST_AUTHORIZED: (e) => `${e.payload.request_no} is authenticated and ready to be paid`,
+  REQUEST_RESCHEDULE_NEEDED: (e) => `${e.payload.request_no}: a due date was changed`,
   REQUEST_RETURNED: (e) => `${e.payload.request_no} was returned for correction`,
   REQUEST_REJECTED: (e) => `${e.payload.request_no} was rejected`,
   REQUEST_ADJUSTED: (e) => `${e.payload.request_no} was adjusted`,
@@ -43,6 +43,8 @@ const SUBJECTS: Record<string, (e: OutboxEvent) => string> = {
 };
 /** Extra lines for some events. */
 const NOTES: Record<string, string[]> = {
+  REQUEST_AUTHORIZED: ["The amount is now deducted from the account's system balance. It is marked Paid when the weekly reconciliation matches it to the bank statement."],
+  REQUEST_RESCHEDULE_NEEDED: ["Only the due date changed: the request keeps its approvals and its reserved funds, and nothing else is needed."],
   USER_LOCKED: ["It unlocks by itself after a few minutes. If it was not you trying to sign in, tell a system administrator."],
   PASSWORD_RESET_COMPLETED: ["You replaced the temporary password an administrator gave you. If this was not you, tell a system administrator now."],
   ACCOUNT_OPENING_OVERDUE: ["Balance checks on this account are refused until the week's opening balance is entered."],
