@@ -1,10 +1,8 @@
 {
-  "2": "Auth and Admin Actions",
   "3": "Documentation and Workflows",
   "4": "Payment Workflow Actions",
   "7": "Suppliers and Requests Schema",
   "8": "Workflow Schema and Adjustments",
-  "9": "Dev Dependencies",
   "13": "TypeScript Compiler Config",
   "15": "NPM Scripts",
   "16": "Runtime Dependencies",

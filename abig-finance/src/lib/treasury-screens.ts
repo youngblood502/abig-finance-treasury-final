@@ -81,7 +81,7 @@ export const accountList = async (tx: Tx, company: string | null) => {
       WHERE ${accountInCompany("a.id", "$1")} ORDER BY a.account_label`, [company]);
   const ids = accounts.map((a) => a.id);
   const users = await tx.q<AccountUser>("SELECT g.id, g.account_id, g.company_id, c.legal_name AS name, g.is_owner, g.permissions FROM company_bank_account_access g JOIN companies c ON c.id = g.company_id WHERE g.account_id = ANY($1::uuid[]) AND g.revoked_at IS NULL ORDER BY g.is_owner DESC, c.legal_name", [ids]);
-  const history = await tx.q<LogRow & { account_id: string }>("SELECT a.id AS account_id, h.id, h.updated_at, h.previous_balance, h.new_balance, h.updated_by_name, h.request_no, h.entry_kind, h.bank_figure, h.outstanding_total, h.implied_deposit, h.anomalies FROM unnest($1::uuid[]) a(id) CROSS JOIN LATERAL account_balance_history(a.id, 25) h", [ids]);
+  const history = await tx.q<LogRow & { account_id: string }>("SELECT a.id AS account_id, h.id, h.updated_at, h.previous_balance, h.new_balance, CASE WHEN h.request_no IS NULL OR app_account_access(a.id) <> 'NONE' OR EXISTS (SELECT 1 FROM payment_requests r WHERE r.request_no = h.request_no AND r.debtor_company_id IN (SELECT app_member_companies())) THEN h.updated_by_name END AS updated_by_name, h.request_no, h.entry_kind, h.bank_figure, h.outstanding_total, h.implied_deposit, h.anomalies FROM unnest($1::uuid[]) a(id) CROSS JOIN LATERAL account_balance_history(a.id, 25) h", [ids]);
   return accounts.map((a): AccountRow => ({ ...a, users: users.filter((u) => u.account_id === a.id), history: history.filter((h) => h.account_id === a.id) }));
 };
 

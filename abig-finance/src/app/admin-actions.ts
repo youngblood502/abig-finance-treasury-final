@@ -2,6 +2,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { adminBackPath } from "@/lib/admin";
 import { adminResetTotp, adminSetPassword, adminUnlock, revokeSessions } from "@/lib/auth";
 import { temporaryPassword } from "@/lib/crypto";
 import { withUser } from "@/lib/db";
@@ -42,23 +43,23 @@ export async function createUser(f: FormData) {
 }
 export async function resetPassword(f: FormData) {
   let temp: string | undefined; const id = str(f, "user");
-  return done("/admin?tab=users", "Password reset. Give the person the temporary password shown below.", async () => {
+  return done(adminBackPath(str(f, "user")), "Password reset. Give the person the temporary password shown below.", async () => {
     const actor = await currentUserId();
     temp = temporaryPassword(); await admin((tx, uid) => audit(tx, uid, "USER_PASSWORD_RESET", id, {})); await adminSetPassword(actor, id, temp);
   }, () => temp && `New temporary password for ${str(f, "label")}: ${temp}`);
 }
-export async function unlockUser(f: FormData) { const id = str(f, "user"); return done("/admin?tab=users", "Account unlocked.", async () => { const actor = await currentUserId(); await admin((tx, uid) => audit(tx, uid, "USER_UNLOCKED", id, {})); await adminUnlock(actor, id); }); }
-export async function resetMfa(f: FormData) { const id = str(f, "user"); return done("/admin?tab=users", "Two-step verification reset. The person can set it up again at next sign-in.", async () => { const actor = await currentUserId(); await admin((tx, uid) => audit(tx, uid, "USER_MFA_RESET", id, {})); await adminResetTotp(actor, id); await revokeSessions(id); }); }
+export async function unlockUser(f: FormData) { const id = str(f, "user"); return done(adminBackPath(str(f, "user")), "Account unlocked.", async () => { const actor = await currentUserId(); await admin((tx, uid) => audit(tx, uid, "USER_UNLOCKED", id, {})); await adminUnlock(actor, id); }); }
+export async function resetMfa(f: FormData) { const id = str(f, "user"); return done(adminBackPath(str(f, "user")), "Two-step verification reset. The person can set it up again at next sign-in.", async () => { const actor = await currentUserId(); await admin((tx, uid) => audit(tx, uid, "USER_MFA_RESET", id, {})); await adminResetTotp(actor, id); await revokeSessions(id); }); }
 export async function setUserActive(f: FormData) {
   const id = str(f, "user"), active = str(f, "active") === "1";
-  return done("/admin?tab=users", active ? "User reactivated." : "User deactivated and signed out everywhere.", async () => {
+  return done(adminBackPath(str(f, "user")), active ? "User reactivated." : "User deactivated and signed out everywhere.", async () => {
     await admin(async (tx, uid) => { if (id === uid && !active) throw new WorkflowError(422, "You cannot deactivate yourself."); await tx.q("UPDATE users SET is_active = $2 WHERE id = $1", [id, active]); await audit(tx, uid, active ? "USER_REACTIVATED" : "USER_DEACTIVATED", id, {}); });
     if (!active) await revokeSessions(id);
   });
 }
 export async function setAdmin(f: FormData) {
   const id = str(f, "user"), on = str(f, "on") === "1";
-  return done("/admin?tab=users", on ? "Administrator rights given." : "Administrator rights removed.", () => admin(async (tx, uid) => {
+  return done(adminBackPath(str(f, "user")), on ? "Administrator rights given." : "Administrator rights removed.", () => admin(async (tx, uid) => {
     if (id === uid && !on) throw new WorkflowError(422, "You cannot remove your own administrator rights.");
     await tx.q("UPDATE users SET is_system_admin = $2 WHERE id = $1", [id, on]); await audit(tx, uid, on ? "ADMIN_GRANTED" : "ADMIN_REMOVED", id, {});
   }));
@@ -68,7 +69,7 @@ export async function setAdmin(f: FormData) {
 /** Sets the person's roles in one company. The database refuses a role that is limited to fewer companies than this would make. */
 export async function setMembershipRoles(f: FormData) {
   const roleIds = f.getAll("roles").map(String);
-  return done("/admin?tab=users", "Roles saved.", () => admin(async (tx, uid) => {
+  return done(adminBackPath(str(f, "user")), "Roles saved.", () => admin(async (tx, uid) => {
     if (!roleIds.length) throw new WorkflowError(422, "Choose at least one role.");
     const user = str(f, "user"), company = str(f, "company");
     const valid = await tx.q<{ id: string; code: string }>("SELECT id, code FROM roles WHERE id = ANY($1::uuid[]) AND is_active", [roleIds]);
@@ -81,15 +82,15 @@ export async function setMembershipRoles(f: FormData) {
   }));
 }
 export async function revokeMembership(f: FormData) {
-  return done("/admin?tab=users", "Access removed.", () => admin(async (tx, uid) => { await tx.q("UPDATE company_memberships SET revoked_at = now() WHERE id = $1", [str(f, "id")]); await audit(tx, uid, "MEMBERSHIP_REVOKED", str(f, "user"), {}); }));
+  return done(adminBackPath(str(f, "user")), "Access removed.", () => admin(async (tx, uid) => { await tx.q("UPDATE company_memberships SET revoked_at = now() WHERE id = $1", [str(f, "id")]); await audit(tx, uid, "MEMBERSHIP_REVOKED", str(f, "user"), {}); }));
 }
 export async function addGroupGrant(f: FormData) {
-  return done("/admin?tab=users", "Group reporting access granted.", () => admin(async (tx, uid) => {
+  return done(adminBackPath(str(f, "user")), "Group reporting access granted.", () => admin(async (tx, uid) => {
     await tx.q("INSERT INTO group_permission_grants (user_id, permission, company_id) VALUES ($1,'GROUP_REPORT_VIEW',$2)", [str(f, "user"), str(f, "company")]); await audit(tx, uid, "GROUP_GRANT_ADDED", str(f, "user"), { company: str(f, "company") });
   }));
 }
 export async function revokeGroupGrant(f: FormData) {
-  return done("/admin?tab=users", "Group reporting access removed.", () => admin(async (tx, uid) => { await tx.q("UPDATE group_permission_grants SET revoked_at = now() WHERE id = $1", [str(f, "id")]); await audit(tx, uid, "GROUP_GRANT_REVOKED", str(f, "user"), {}); }));
+  return done(adminBackPath(str(f, "user")), "Group reporting access removed.", () => admin(async (tx, uid) => { await tx.q("UPDATE group_permission_grants SET revoked_at = now() WHERE id = $1", [str(f, "id")]); await audit(tx, uid, "GROUP_GRANT_REVOKED", str(f, "user"), {}); }));
 }
 
 // ---------- Companies ----------

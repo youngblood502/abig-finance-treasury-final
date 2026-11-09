@@ -8,6 +8,11 @@ import type { ApprovalStage } from "./workflow";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, DATE = /^\d{4}-\d{2}-\d{2}$/;
 export const REQUEST_LIST_LIMIT = 500;
 
+// Group reporting is read-only access to a company, not membership of it. A group reporter sees a request's number, company, amount, method, account, dates and status, but not
+// who is paid or how, the invoice or its documents, who handled it, or why. Administrators count as members.
+const MEMBER = "r.debtor_company_id IN (SELECT app_member_companies())";
+export const PAYEE_HIDDEN = "Not shown";
+
 export interface RequestFilters { q: string; state: string | null; method: string | null; account: string | null; from: string | null; to: string | null }
 
 /** Reads the filters from the URL. Anything that is not a valid value is dropped, so it never reaches a query. */
@@ -24,12 +29,12 @@ export const likePattern = (q: string) => `%${q.replace(/[\\%_]/g, (c) => `\\${c
 
 export interface RequestListRow { id: string; request_no: string; company: string; payee: string | null; total_amount: string; workflow_state: string; priority: string; account: string | null; method: string; due: string | null }
 export const listRequests = (tx: Tx, f: RequestFilters, company: string | null) => tx.q<RequestListRow>(
-  `SELECT r.id, r.request_no, c.legal_name AS company, COALESCE(s.legal_name, p.full_name) AS payee, r.total_amount, r.workflow_state::text AS workflow_state, r.priority, a.account_label AS account, r.payment_method::text AS method,
+  `SELECT r.id, r.request_no, c.legal_name AS company, CASE WHEN ${MEMBER} THEN COALESCE(s.legal_name, p.full_name) END AS payee, r.total_amount, r.workflow_state::text AS workflow_state, r.priority, a.account_label AS account, r.payment_method::text AS method,
           (SELECT min(due_date) FROM payment_installments WHERE request_id = r.id) AS due
      FROM payment_requests r JOIN companies c ON c.id = r.debtor_company_id LEFT JOIN suppliers s ON s.id = r.supplier_id LEFT JOIN person_payees p ON p.id = r.person_payee_id
      LEFT JOIN company_bank_accounts a ON a.id = r.debit_account_id
     WHERE ($1::text IS NULL OR r.workflow_state::text = $1) AND ($2::uuid IS NULL OR r.debtor_company_id = $2)
-      AND ($3::text IS NULL OR r.request_no ILIKE $3 OR COALESCE(s.legal_name, p.full_name) ILIKE $3 OR r.invoice_ref ILIKE $3)
+      AND ($3::text IS NULL OR r.request_no ILIKE $3 OR (${MEMBER} AND (COALESCE(s.legal_name, p.full_name) ILIKE $3 OR r.invoice_ref ILIKE $3)))
       AND ($4::text IS NULL OR r.payment_method::text = $4) AND ($5::uuid IS NULL OR r.debit_account_id = $5)
       AND ($6::date IS NULL OR r.created_at >= $6::date) AND ($7::date IS NULL OR r.created_at < $7::date + 1)
     ORDER BY r.created_at DESC LIMIT ${REQUEST_LIST_LIMIT}`,
@@ -62,34 +67,44 @@ export interface RequestRow {
   total_amount: string; priority: string; invoice_ref: string | null; invoice_date: string | null; description: string | null; payment_method: string; cheque_no: string | null; bank_reference: string | null; paid_at: Date | null;
   debit_account_id: string | null; company: string; payee: string | null; tin: string | null; bank_name: string | null; account_last4: string | null; bank_status: string | null; creator_name: string | null;
   person_phone: string | null; id_last4: string | null; person_kind: string | null; person_bank: string | null; person_last4: string | null; telebirr_phone: string | null; person_detail_status: string | null;
-  debit_label: string | null; account_kind: string | null; wallet_phone: string | null; debit_bank: string | null; debit_last4: string | null; debit_available: string | null; debit_current: string | null; debit_reserved: string | null;
+  debit_label: string | null; account_kind: string | null; wallet_phone: string | null; debit_bank: string | null; debit_last4: string | null; debit_available: string | null; debit_current: string | null; debit_reserved: string | null; is_member: boolean;
 }
 export interface InstallmentRow { seq: number; due_date: string; amount: string }
 export interface ApprovalRow { id: string; action: string; actor_role: string; reason: string | null; occurred_at: Date; full_name: string | null }
 export interface AdjustmentRow { id: string; field: string; old_value: string | null; new_value: string | null; reason: string; occurred_at: Date; full_name: string | null }
 export interface FileRow { id: string; kind: string; filename: string; uploaded_at: Date; replaced: number | null }
 
+/** What a group reporter does not get. Applied to everything loadRequest returns, so no page can show it by mistake. */
+const PRIVATE_FIELDS: (keyof RequestRow)[] = ["payee", "tin", "bank_name", "account_last4", "bank_status", "creator_name", "person_phone", "id_last4", "person_kind", "person_bank", "person_last4", "telebirr_phone", "person_detail_status", "invoice_ref", "invoice_date", "description", "cheque_no", "bank_reference"];
+export const maskRequest = (r: RequestRow): RequestRow => ({ ...r, ...Object.fromEntries(PRIVATE_FIELDS.map((k) => [k, null])) });
+
 export const loadRequest = async (tx: Tx, id: string) => {
-  const r = (await tx.q<RequestRow>(
+  const row = (await tx.q<RequestRow>(
     `SELECT r.id, r.request_no, r.version, r.workflow_state::text AS workflow_state, r.created_by, r.debtor_company_id, r.supplier_id, r.person_payee_id, r.total_amount, r.priority, r.invoice_ref, r.invoice_date, r.description,
             r.payment_method::text AS payment_method, r.cheque_no, r.bank_reference, r.paid_at, r.debit_account_id,
             c.legal_name AS company, COALESCE(s.legal_name, p.full_name) AS payee, s.tin, b.bank_name, b.account_last4, b.status AS bank_status, u.full_name AS creator_name,
             p.phone AS person_phone, p.id_last4, pd.kind AS person_kind, pd.bank_name AS person_bank, pd.account_last4 AS person_last4, pd.telebirr_phone, pd.status AS person_detail_status,
             da.account_label AS debit_label, da.account_kind::text AS account_kind, da.wallet_phone, dk.name AS debit_bank, da.account_last4 AS debit_last4,
-            da.available_balance AS debit_available, da.current_balance AS debit_current, da.reserved_balance AS debit_reserved
+            da.available_balance AS debit_available, da.current_balance AS debit_current, da.reserved_balance AS debit_reserved, ${MEMBER} AS is_member
        FROM payment_requests r JOIN companies c ON c.id = r.debtor_company_id LEFT JOIN suppliers s ON s.id = r.supplier_id LEFT JOIN person_payees p ON p.id = r.person_payee_id
        LEFT JOIN person_payment_details pd ON pd.id = r.person_payment_detail_id LEFT JOIN supplier_bank_details b ON b.id = r.supplier_bank_detail_id LEFT JOIN users u ON u.id = r.created_by
        LEFT JOIN company_bank_accounts da ON da.id = r.debit_account_id LEFT JOIN banks dk ON dk.id = da.bank_id WHERE r.id = $1`, [id]))[0];
-  if (!r) return null;
+  if (!row) return null;
+  const member = row.is_member;
   return {
-    r,
+    r: member ? row : maskRequest(row),
+    restricted: !member,
     installments: await tx.q<InstallmentRow>("SELECT seq, due_date, amount FROM payment_installments WHERE request_id = $1 ORDER BY seq", [id]),
-    approvals: await tx.q<ApprovalRow>("SELECT a.id, a.action, a.actor_role, a.reason, a.occurred_at, u.full_name FROM approval_events a LEFT JOIN users u ON u.id = a.actor_id WHERE a.request_id = $1 ORDER BY a.occurred_at, a.id", [id]),
-    adjustments: await tx.q<AdjustmentRow>("SELECT h.id, h.field, h.old_value, h.new_value, h.reason, h.occurred_at, u.full_name FROM adjustment_history h LEFT JOIN users u ON u.id = h.actor_id WHERE h.request_id = $1 ORDER BY h.occurred_at, h.id", [id]),
-    files: await tx.q<FileRow>("SELECT id, kind, filename, uploaded_at, (SELECT 1 FROM attachments x WHERE x.supersedes_id = attachments.id) AS replaced FROM attachments WHERE request_id = $1 ORDER BY uploaded_at", [id]),
+    approvals: (await tx.q<ApprovalRow>("SELECT a.id, a.action, a.actor_role, a.reason, a.occurred_at, u.full_name FROM approval_events a LEFT JOIN users u ON u.id = a.actor_id WHERE a.request_id = $1 ORDER BY a.occurred_at, a.id", [id])).map((a) => (member ? a : { ...a, reason: null, full_name: null })),
+    adjustments: member ? await tx.q<AdjustmentRow>("SELECT h.id, h.field, h.old_value, h.new_value, h.reason, h.occurred_at, u.full_name FROM adjustment_history h LEFT JOIN users u ON u.id = h.actor_id WHERE h.request_id = $1 ORDER BY h.occurred_at, h.id", [id]) : [],
+    files: member ? await tx.q<FileRow>("SELECT id, kind, filename, uploaded_at, (SELECT 1 FROM attachments x WHERE x.supersedes_id = attachments.id) AS replaced FROM attachments WHERE request_id = $1 ORDER BY uploaded_at", [id]) : [],
     stage: (await tx.q<{ stage: ApprovalStage }>("SELECT stage FROM app_actionable_requests() WHERE request_id = $1", [id]))[0]?.stage ?? null,
   };
 };
+
+/** A document can name the payee, so it opens only for the company's members. Null reads the same as a file that does not exist. */
+export const requestDocument = async (tx: Tx, id: string) => (await tx.q<{ object_key: string; filename: string; mime_type: string }>(
+  `SELECT f.object_key, f.filename, f.mime_type FROM attachments f JOIN payment_requests r ON r.id = f.request_id WHERE f.id = $1 AND ${MEMBER}`, [id]))[0] ?? null;
 
 export interface ReviewRow {
   request_id: string; request_no: string; stage: ApprovalStage; request_version: number; total_amount: string; waiting_since: Date; company: string; payee: string | null; creator: string | null; verifier: string | null; verified_at: Date | null;
