@@ -3,12 +3,13 @@ import { Client } from "pg";
 import { fails, rows, setupDb, user } from "./helpers";
 import { compose } from "../src/worker/mail";
 
-// Phase 6 Task 3A: the old engine's scheduler and money functions are kept but can no longer be called by the application, the worker or anyone
-// through PUBLIC. The functions the current workflow uses keep their permissions.
-const OBSOLETE = [
-  "account_forecast(uuid,integer)", "forecast_add(uuid,text,numeric,date,text)", "forecast_cancel(uuid,text)", "installment_balances(uuid)",
-  "report_outstanding()", "report_payments(date,date)", "treasury_confirm_schedule(uuid,uuid,date,text,numeric)", "treasury_enqueue_overdue()",
-  "treasury_manual_movement(uuid,numeric,timestamptz,text)", "treasury_recommend(uuid)", "treasury_record_payment(uuid,uuid,numeric,timestamptz,text,text)",
+// Phase 6 Task 3A revoked EXECUTE on the old engine's scheduler and money functions; Task 4 (20261110000400_remove_legacy_engine) then removed
+// those that used the six legacy tables. The forecast functions stay (their table, cash_forecast_items, is kept) and still cannot be called.
+// The functions the current workflow uses keep their permissions.
+const KEPT_BUT_REVOKED = ["forecast_add(uuid,text,numeric,date,text)", "forecast_cancel(uuid,text)"];
+const REMOVED = [
+  "account_forecast(uuid,integer)", "installment_balances(uuid)", "report_outstanding()", "report_payments(date,date)", "treasury_confirm_schedule(uuid,uuid,date,text,numeric)",
+  "treasury_enqueue_overdue()", "treasury_manual_movement(uuid,numeric,timestamptz,text)", "treasury_recommend(uuid)", "treasury_record_payment(uuid,uuid,numeric,timestamptz,text,text)",
   "treasury_release(uuid,text)", "treasury_release_orphaned()", "treasury_reserve(uuid,uuid,numeric,date,text)", "treasury_reverse_payment(uuid,text)", "treasury_schedule_queue()",
 ];
 // Current functions that must stay callable, by role.
@@ -24,25 +25,27 @@ beforeAll(async () => { const d = await setupDb("abig_test_obsolete"); owner = d
 afterAll(async () => { await owner?.end(); });
 
 describe("obsolete old-engine functions", () => {
-  it("still exist, but no application, worker, sign-in or PUBLIC role may execute them", async () => {
-    for (const f of OBSOLETE) {
+  it("the forecast functions still exist, but no application, worker, sign-in or PUBLIC role may execute them", async () => {
+    for (const f of KEPT_BUT_REVOKED) {
       const r = (await rows(owner, `SELECT to_regprocedure($1) IS NOT NULL AS exists, has_function_privilege('abig_app', $1, 'EXECUTE') AS app,
         has_function_privilege('abig_worker', $1, 'EXECUTE') AS worker, has_function_privilege('abig_auth', $1, 'EXECUTE') AS auth,
         EXISTS (SELECT 1 FROM aclexplode((SELECT proacl FROM pg_proc WHERE oid = to_regprocedure($1))) a WHERE a.grantee = 0) AS public`, [f]))[0];
       expect({ f, ...r }).toEqual({ f, exists: true, app: false, worker: false, auth: false, public: false });
     }
   });
+  it("the ones that used the legacy tables are gone after a fresh installation", async () => {
+    for (const f of REMOVED) expect({ f, exists: (await rows(owner, "SELECT to_regprocedure($1) IS NOT NULL AS e", [f]))[0].e }).toEqual({ f, exists: false });
+  });
   it("calling one as the application or the worker is refused", async () => {
     await as(user.admin, async (c) => {
-      expect(await fails(c, "SELECT * FROM treasury_schedule_queue()")).toMatch(/permission denied/);
-      expect(await fails(c, "SELECT treasury_reserve($1,$1,1,current_date,NULL)", ["00000000-0000-4000-8000-000000000000"])).toMatch(/permission denied/);
-      expect(await fails(c, "SELECT * FROM report_outstanding()")).toMatch(/permission denied/);
+      expect(await fails(c, "SELECT forecast_cancel($1, 'x')", ["00000000-0000-4000-8000-000000000000"])).toMatch(/permission denied/);
+      expect(await fails(c, "SELECT * FROM treasury_schedule_queue()")).toMatch(/does not exist/);
     });
     const w = new Client({ connectionString: workerUrl }); await w.connect();
     try {
       await w.query("BEGIN");
-      expect(await fails(w, "SELECT treasury_enqueue_overdue()")).toMatch(/permission denied/);
-      expect(await fails(w, "SELECT treasury_release_orphaned()")).toMatch(/permission denied/);
+      expect(await fails(w, "SELECT forecast_cancel($1, 'x')", ["00000000-0000-4000-8000-000000000000"])).toMatch(/permission denied/);
+      expect(await fails(w, "SELECT treasury_release_orphaned()")).toMatch(/does not exist/);
       await w.query("ROLLBACK");
     } finally { await w.end(); }
   });
