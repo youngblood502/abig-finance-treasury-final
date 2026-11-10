@@ -329,3 +329,27 @@ export async function grantAccess(f: FormData) {
 export async function revokeAccess(f: FormData) {
   return act("/accounts", "Access withdrawn.", guard(["bank_account:manage"], (uid) => dbl(withUser(uid, (tx) => tx.q("UPDATE company_bank_account_access SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL", [str(f, "id")])))));
 }
+
+// ---------- Recurring payments ----------
+// Saving and turning on or off are checked again in the database (recurring_payment:manage in the template's company).
+export async function saveRecurringTemplate(f: FormData) {
+  const [company, payeeType, payee] = str(f, "target").split("|");
+  const id = str(f, "id") || null;
+  return act("/recurring", id ? "Recurring payment saved. Changes apply to the Drafts created from now on." : "Recurring payment added. A Draft is created on each date; nothing is submitted or reserved automatically.",
+    guard(["recurring_payment:manage"], (uid) => dbl(withUser(uid, (tx) => tx.q("SELECT recurring_template_save($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::date,$12::date,$13,$14,$15)", [
+      id, company || null, str(f, "name"), payeeType || null, payee || null, str(f, "account") || null, str(f, "payment_method") || "TRANSFER", num(f, "amount"),
+      str(f, "estimate") === "on", str(f, "frequency") || "MONTHLY", str(f, "next_date") || null, str(f, "end_date") || null, Number(str(f, "due_days") || 0),
+      str(f, "priority") || "NORMAL", str(f, "description") || null,
+    ])))));
+}
+export async function setRecurringActive(f: FormData) {
+  const on = str(f, "active") === "1";
+  return act("/recurring", on ? "Recurring payment turned on." : "Recurring payment turned off. No more Drafts are created from it.",
+    guard(["recurring_payment:manage"], (uid) => dbl(withUser(uid, (tx) => tx.q("SELECT recurring_template_set_active($1,$2)", [str(f, "id"), on])))));
+}
+/** The creator confirms a Draft's estimated amount (after correcting it if needed). Until then it cannot be submitted or scheduled. */
+export async function confirmRequestAmount(f: FormData) {
+  const id = str(f, "id");
+  return act(`/requests/${id}`, "Amount confirmed. The request can now be submitted or scheduled.",
+    guard(["payment_request:create"], (uid) => dbl(withUser(uid, (tx) => tx.q("SELECT confirm_request_amount($1)", [id])))));
+}
