@@ -30,6 +30,7 @@ const SUBJECTS: Record<string, (e: OutboxEvent) => string> = {
   REQUEST_OVERDUE: (e) => `${e.payload.request_no} has overdue payments`,
   ACCOUNT_SHORTFALL: (e) => `${e.payload.account_label} is in shortfall by ${etb(e.payload.shortfall_amount)}`,
   REQUEST_PAID: (e) => `${e.payload.request_no} is paid`,
+  REQUEST_SCHEDULE_BLOCKED: (e) => `${e.payload.request_no} was not submitted on its scheduled date`,
   RECONCILIATION_SUBMITTED: (e) => `${e.payload.account_label}: the reconciliation for the week of ${dstr(e.payload.week_start)} is waiting for your review`,
   RECONCILIATION_RETURNED: (e) => `${e.payload.account_label}: the reconciliation for the week of ${dstr(e.payload.week_start)} was returned for changes`,
   RECONCILIATION_LOCKED: (e) => `${e.payload.account_label}: the reconciliation for the week of ${dstr(e.payload.week_start)} is locked`,
@@ -44,6 +45,7 @@ const SUBJECTS: Record<string, (e: OutboxEvent) => string> = {
 /** Extra lines for some events. */
 const NOTES: Record<string, string[]> = {
   REQUEST_AUTHORIZED: ["The amount is now deducted from the account's system balance. It is marked Paid when the weekly reconciliation matches it to the bank statement."],
+  REQUEST_SCHEDULE_BLOCKED: ["It stays Scheduled and nothing is reserved. It is tried again automatically; you can also change it or cancel it. You are not told again."],
   REQUEST_RESCHEDULE_NEEDED: ["Only the due date changed: the request keeps its approvals and its reserved funds, and nothing else is needed."],
   USER_LOCKED: ["It unlocks by itself after a few minutes. If it was not you trying to sign in, tell a system administrator."],
   PASSWORD_RESET_COMPLETED: ["You replaced the temporary password an administrator gave you. If this was not you, tell a system administrator now."],

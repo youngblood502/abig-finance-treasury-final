@@ -60,8 +60,18 @@ export async function setCompany(f: FormData) {
 async function submitSaved(uid: string, id: string): Promise<string | null> {
   try { await dbl(withUser(uid, (tx) => tx.q("SELECT wf_submit($1)", [id]))); return null; } catch (e) { return message(e); }
 }
+/** Schedules a saved draft. If it is refused (a date after the first due date, for example) the draft is kept. Nothing is reserved until the date. */
+async function scheduleSaved(uid: string, id: string, date: string): Promise<string | null> {
+  try { await dbl(withUser(uid, (tx) => tx.q("SELECT wf_schedule($1,$2::date)", [id, date || null]))); return null; } catch (e) { return message(e); }
+}
+type SaveMode = "draft" | "submit" | "schedule";
 const SUBMITTED_MSG = "Request submitted. The amount is now reserved on the debit account.";
-const notSubmittedMsg = (why: string) => `Saved as a draft, but not submitted. ${why}`;
+const SCHEDULED_MSG = "Request scheduled. It is submitted automatically on its date, and the amount is reserved then. Nothing is reserved now.";
+const notSubmittedMsg = (why: string, mode: SaveMode = "submit") => `Saved as a draft, but not ${mode === "schedule" ? "scheduled" : "submitted"}. ${why}`;
+const savedMsg = (mode: SaveMode, draft: string) => (mode === "submit" ? SUBMITTED_MSG : mode === "schedule" ? SCHEDULED_MSG : draft);
+/** After saving: submit now, schedule for the chosen date, or leave it as a draft. Returns the refusal, if any. */
+const afterSave = (uid: string, id: string, mode: SaveMode, f: FormData) =>
+  mode === "submit" ? submitSaved(uid, id) : mode === "schedule" ? scheduleSaved(uid, id, str(f, "scheduled_for")) : Promise.resolve(null);
 
 /** The verified details a request will pay to. Empty until they exist; submitting then explains what is missing. */
 const supplierDetail = async (tx: Tx, supplierId: string) => (await tx.q<{ id: string }>("SELECT id FROM supplier_bank_details WHERE supplier_id = $1 AND status = 'VERIFIED'", [supplierId]))[0]?.id ?? null;
@@ -71,9 +81,10 @@ const personDetail = async (tx: Tx, personId: string, method: string) => {
 };
 
 // Saving and submitting are separate actions, one per button: once React has loaded, a form post does not say which button was pressed.
-export async function createRequest(f: FormData) { return saveNewRequest(f, false); }
-export async function createAndSubmitRequest(f: FormData) { return saveNewRequest(f, true); }
-async function saveNewRequest(f: FormData, submit: boolean) {
+export async function createRequest(f: FormData) { return saveNewRequest(f, "draft"); }
+export async function createAndSubmitRequest(f: FormData) { return saveNewRequest(f, "submit"); }
+export async function createAndScheduleRequest(f: FormData) { return saveNewRequest(f, "schedule"); }
+async function saveNewRequest(f: FormData, mode: SaveMode) {
   const uid = await currentUserId();
   let id: string | null = null; let err: string | null = null; let notSubmitted: string | null = null;
   try {
@@ -94,13 +105,13 @@ async function saveNewRequest(f: FormData, submit: boolean) {
       if (file instanceof File && file.size > 0) await saveAttachment(tx, uid, rid, file, "INVOICE");
       return rid;
     }));
-    // Saved first, submitted second: a refusal (for example, not enough available balance) must not throw the draft away.
-    if (submit && id) notSubmitted = await submitSaved(uid, id);
+    // Saved first, submitted (or scheduled) second: a refusal (for example, not enough available balance) must not throw the draft away.
+    if (id) notSubmitted = await afterSave(uid, id, mode, f);
   } catch (e) { err = message(e); }
   revalidatePath("/", "layout");
   if (err || !id) redirect(`/requests/new?err=${encodeURIComponent(err ?? "Something went wrong.")}`);
-  if (notSubmitted) redirect(`/requests/${id}?err=${encodeURIComponent(notSubmittedMsg(notSubmitted))}`);
-  redirect(`/requests/${id}?msg=${encodeURIComponent(submit ? SUBMITTED_MSG : "Draft saved.")}`);
+  if (notSubmitted) redirect(`/requests/${id}?err=${encodeURIComponent(notSubmittedMsg(notSubmitted, mode))}`);
+  redirect(`/requests/${id}?msg=${encodeURIComponent(savedMsg(mode, "Draft saved."))}`);
 }
 
 export async function workflowAction(f: FormData) {
@@ -196,36 +207,60 @@ async function decideBankDetail(f: FormData, ok: boolean) {
 }
 
 // ---------- Editing a draft ----------
-export async function saveDraft(f: FormData) { return saveExistingDraft(f, false); }
-export async function saveAndSubmitDraft(f: FormData) { return saveExistingDraft(f, true); }
-async function saveExistingDraft(f: FormData, submit: boolean) {
+export async function saveDraft(f: FormData) { return saveExistingDraft(f, "draft"); }
+export async function saveAndSubmitDraft(f: FormData) { return saveExistingDraft(f, "submit"); }
+export async function saveAndScheduleDraft(f: FormData) { return saveExistingDraft(f, "schedule"); }
+
+/** Writes the edit form onto a draft the caller created, in the caller's transaction. Row-level security allows only the creator's own drafts. */
+async function applyDraftEdits(tx: Tx, uid: string, f: FormData, id: string) {
+  const dues = f.getAll("due").map(String), amts = f.getAll("amt").map(String);
+  const inst = dues.map((d, i) => ({ d, a: Number(amts[i]) })).filter((x) => x.d && x.a > 0);
+  const file = f.get("invoice");
+  const cur = (await tx.q<{ debtor_company_id: string; payee_type: string; person_payee_id: string | null }>("SELECT debtor_company_id, payee_type::text AS payee_type, person_payee_id FROM payment_requests WHERE id = $1", [id]))[0];
+  if (!cur) throw new WorkflowError(404, "Request not found.");
+  const person = cur.payee_type === "PERSON", method = str(f, "payment_method") || "TRANSFER", supplierId = person ? null : str(f, "supplier");
+  const details = person ? await personDetail(tx, cur.person_payee_id!, method) : await supplierDetail(tx, supplierId!);
+  const n = await tx.q("UPDATE payment_requests SET supplier_id = $2, supplier_bank_detail_id = $3, person_payment_detail_id = $11, invoice_ref = $4, invoice_date = $5::date, description = $6, priority = $7, total_amount = $8, debit_account_id = $9, payment_method = $10::payment_method WHERE id = $1 RETURNING id",
+    [id, supplierId, person ? null : details, str(f, "invoice_ref") || null, str(f, "invoice_date") || null, str(f, "description") || null, str(f, "priority") || "NORMAL", inst.reduce((s, x) => s + x.a, 0) || 1, str(f, "account") || null, method, person ? details : null]);
+  if (!n.length) throw new WorkflowError(403, "This request can no longer be edited by you.");
+  await tx.q("DELETE FROM payment_installments WHERE request_id = $1", [id]);
+  for (const [i, x] of inst.entries()) await tx.q("INSERT INTO payment_installments (request_id, seq, due_date, amount) VALUES ($1,$2,$3::date,$4)", [id, i + 1, x.d, x.a]);
+  if (file instanceof File && file.size > 0) {
+    const old = (await tx.q<{ id: string }>("SELECT a.id FROM attachments a WHERE a.request_id = $1 AND a.kind = 'INVOICE' AND NOT EXISTS (SELECT 1 FROM attachments b WHERE b.supersedes_id = a.id) ORDER BY a.uploaded_at DESC LIMIT 1", [id]))[0];
+    await saveAttachment(tx, uid, id, file, "INVOICE", old?.id);
+  }
+}
+
+async function saveExistingDraft(f: FormData, mode: SaveMode) {
   const id = str(f, "id"); const uid = await currentUserId(); let err: string | null = null; let notSubmitted: string | null = null;
   try {
     assertCan(await requireMe(), "payment_request:create");
-    const dues = f.getAll("due").map(String), amts = f.getAll("amt").map(String);
-    const inst = dues.map((d, i) => ({ d, a: Number(amts[i]) })).filter((x) => x.d && x.a > 0);
-    const file = f.get("invoice");
-    await dbl(withUser(uid, async (tx) => {
-      const cur = (await tx.q<{ debtor_company_id: string; payee_type: string; person_payee_id: string | null }>("SELECT debtor_company_id, payee_type::text AS payee_type, person_payee_id FROM payment_requests WHERE id = $1", [id]))[0];
-      if (!cur) throw new WorkflowError(404, "Request not found.");
-      const person = cur.payee_type === "PERSON", method = str(f, "payment_method") || "TRANSFER", supplierId = person ? null : str(f, "supplier");
-      const details = person ? await personDetail(tx, cur.person_payee_id!, method) : await supplierDetail(tx, supplierId!);
-      const n = await tx.q("UPDATE payment_requests SET supplier_id = $2, supplier_bank_detail_id = $3, person_payment_detail_id = $11, invoice_ref = $4, invoice_date = $5::date, description = $6, priority = $7, total_amount = $8, debit_account_id = $9, payment_method = $10::payment_method WHERE id = $1 RETURNING id",
-        [id, supplierId, person ? null : details, str(f, "invoice_ref") || null, str(f, "invoice_date") || null, str(f, "description") || null, str(f, "priority") || "NORMAL", inst.reduce((s, x) => s + x.a, 0) || 1, str(f, "account") || null, method, person ? details : null]);
-      if (!n.length) throw new WorkflowError(403, "This request can no longer be edited by you.");
-      await tx.q("DELETE FROM payment_installments WHERE request_id = $1", [id]);
-      for (const [i, x] of inst.entries()) await tx.q("INSERT INTO payment_installments (request_id, seq, due_date, amount) VALUES ($1,$2,$3::date,$4)", [id, i + 1, x.d, x.a]);
-      if (file instanceof File && file.size > 0) {
-        const old = (await tx.q<{ id: string }>("SELECT a.id FROM attachments a WHERE a.request_id = $1 AND a.kind = 'INVOICE' AND NOT EXISTS (SELECT 1 FROM attachments b WHERE b.supersedes_id = a.id) ORDER BY a.uploaded_at DESC LIMIT 1", [id]))[0];
-        await saveAttachment(tx, uid, id, file, "INVOICE", old?.id);
-      }
-    }));
-    if (submit) notSubmitted = await submitSaved(uid, id);
+    await dbl(withUser(uid, (tx) => applyDraftEdits(tx, uid, f, id)));
+    notSubmitted = await afterSave(uid, id, mode, f);
   } catch (e) { err = message(e); }
   revalidatePath("/", "layout");
   if (err) redirect(`/requests/${id}/edit?err=${encodeURIComponent(err)}`);
-  if (notSubmitted) redirect(`/requests/${id}?err=${encodeURIComponent(notSubmittedMsg(notSubmitted))}`);
-  redirect(`/requests/${id}?msg=${encodeURIComponent(submit ? SUBMITTED_MSG : "Changes saved.")}`);
+  if (notSubmitted) redirect(`/requests/${id}?err=${encodeURIComponent(notSubmittedMsg(notSubmitted, mode))}`);
+  redirect(`/requests/${id}?msg=${encodeURIComponent(savedMsg(mode, "Changes saved."))}`);
+}
+
+/**
+ * Changes a Scheduled request: back to a draft, edited, and scheduled again, in one transaction. If anything is refused (a date after the first due
+ * date, a supplier no longer verified...) nothing changes and it stays Scheduled as it was. The database records the details before and after.
+ */
+export async function saveScheduledChanges(f: FormData) {
+  const id = str(f, "id"); const uid = await currentUserId(); let err: string | null = null;
+  try {
+    assertCan(await requireMe(), "payment_request:create");
+    await dbl(withUser(uid, async (tx) => {
+      await tx.q("SELECT wf_unschedule($1,$2)", [id, Number(str(f, "version"))]);
+      await applyDraftEdits(tx, uid, f, id);
+      await tx.q("SELECT wf_schedule($1,$2::date)", [id, str(f, "scheduled_for") || null]);
+    }));
+  } catch (e) { err = message(e); }
+  revalidatePath("/", "layout");
+  if (err) redirect(`/requests/${id}/edit?err=${encodeURIComponent(err)}`);
+  redirect(`/requests/${id}?msg=${encodeURIComponent("Changes saved. It is still scheduled, and is submitted automatically on its date.")}`);
 }
 
 // ---------- People who are paid ----------

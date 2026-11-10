@@ -1,10 +1,11 @@
 import { notFound, redirect } from "next/navigation";
 import { Flash } from "@/components";
-import { saveAndSubmitDraft, saveDraft } from "../../../actions";
+import { saveAndScheduleDraft, saveAndSubmitDraft, saveDraft, saveScheduledChanges } from "../../../actions";
+import { ScheduleField } from "@/components/requests/schedule-field";
 import { dstr, etb, PAYMENT_METHODS, accountPlace } from "@/lib/format";
 import { withUser } from "@/lib/db";
 import { requireAccess } from "@/lib/rbac";
-import { requireMe } from "@/lib/session";
+import { hasPermission, requireMe } from "@/lib/session";
 
 export default async function EditRequest({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | undefined>> }) {
   const { id } = await params; const sp = await searchParams;
@@ -27,13 +28,17 @@ export default async function EditRequest({ params, searchParams }: { params: Pr
   });
   if (!d) notFound();
   const { r } = d;
-  if (r.created_by !== me.id || r.workflow_state !== "DRAFT") redirect(`/requests/${id}`);
+  // Drafts, and Scheduled requests until they are submitted, can be changed by their creator. A Scheduled one is saved and scheduled again in one step.
+  const scheduled = r.workflow_state === "SCHEDULED";
+  if (r.created_by !== me.id || (r.workflow_state !== "DRAFT" && !scheduled)) redirect(`/requests/${id}`);
+  const canSchedule = hasPermission(me, "payment_request:schedule", r.debtor_company_id);
   const rows = Array.from({ length: Math.max(4, d.inst.length + 1) }, (_, i) => d.inst[i]);
   return (
     <>
-      <h1>Edit {r.request_no}</h1><p className="sub">{r.company} · draft</p><Flash sp={sp} />
-      <form action={saveDraft} className="card">
+      <h1>Edit {r.request_no}</h1><p className="sub">{r.company} · {scheduled ? `scheduled for ${dstr(r.scheduled_for)}` : "draft"}</p><Flash sp={sp} />
+      <form action={scheduled ? saveScheduledChanges : saveDraft} className="card">
         <input type="hidden" name="id" value={id} />
+        {scheduled && <input type="hidden" name="version" value={r.version} />}
         <div className="form">
           {r.payee_kind === "PERSON" ? <div><span className="mute">Person</span><br />{r.person_name}</div> : <label className="f">Supplier<select name="supplier" defaultValue={r.supplier_id}>{d.suppliers.map((s: any) => <option key={s.id} value={s.id} disabled={!s.bank_ok}>{s.legal_name}{s.bank_ok ? "" : " (bank details not verified)"}</option>)}</select></label>}
           <label className="f">Pay from (debit account)<select name="account" required defaultValue={r.debit_account_id ?? ""}><option value="" disabled>Choose an account</option>{d.accounts.map((a: any) => <option key={a.id} value={a.id}>{a.account_label} · {accountPlace(a)} — available {etb(a.available_balance)}</option>)}</select></label>
@@ -52,7 +57,10 @@ export default async function EditRequest({ params, searchParams }: { params: Pr
           <label className="f">Replace the invoice file (leave empty to keep {d.file?.filename ?? "none"})<input name="invoice" type="file" accept="application/pdf,image/png,image/jpeg" /></label>
           <label className="f">Notes<textarea name="description" rows={2} defaultValue={r.description ?? ""} /></label>
         </div>
-        <div className="inline" style={{ marginTop: 14 }}><button formAction={saveAndSubmitDraft}>Save and submit (reserve funds)</button><button className="sec">Save changes</button></div>
+        {(scheduled || canSchedule) && <><h2>{scheduled ? "Scheduled date" : "Or schedule it"}</h2><ScheduleField defaultValue={scheduled ? dstr(r.scheduled_for) : null} /></>}
+        {scheduled
+          ? <div className="inline" style={{ marginTop: 14 }}><button>Save changes (stays scheduled)</button></div>
+          : <div className="inline" style={{ marginTop: 14 }}><button formAction={saveAndSubmitDraft}>Save and submit (reserve funds)</button>{canSchedule && <button className="sec" formAction={saveAndScheduleDraft}>Save and schedule</button>}<button className="sec">Save changes</button></div>}
       </form>
     </>
   );

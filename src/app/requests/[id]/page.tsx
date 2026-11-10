@@ -90,6 +90,12 @@ export default async function RequestDetail({ params, searchParams }: { params: 
         </Card>
       )}
       {r.workflow_state === "AUTHENTICATED" && <p className="mute">The account has been debited. This payment stays Authenticated until reconciliation finds it on the bank statement, and it can no longer be cancelled.</p>}
+      {r.workflow_state === "SCHEDULED" && (
+        <div role={r.schedule_error ? "alert" : "status"} className={`note mb-3 ${r.schedule_error ? "bad" : ""}`}>
+          <b>Scheduled for {dstr(r.scheduled_for)}.</b> It is submitted for verification automatically on that date, and the amount is reserved then. Nothing is reserved now.
+          {r.schedule_error && <div className="mt-1">Not submitted yet{r.schedule_error_at ? ` (last tried ${dtime(r.schedule_error_at)})` : ""}: {r.schedule_error} It is tried again automatically; its creator can change it or cancel it.</div>}
+        </div>
+      )}
       {mine && r.workflow_state === "RESERVED" && <p className="mute">The funds are reserved and it is waiting for a Finance Manager. You cannot approve your own request.</p>}
 
       {d.restricted && <p className="mute">With group reporting you see this request's amount, account, dates and status. Who is paid, the invoice and its documents, and who handled it show only to the company's members.</p>}
