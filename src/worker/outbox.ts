@@ -17,6 +17,8 @@ every(15 * 60_000, "created recurring drafts", "SELECT generate_recurring_reques
 // In-app notifications: copies new actionable outbox events to each recipient's bell. Email delivery is not affected.
 every(30_000, "added in-app notifications", "SELECT fan_out_notifications(200)");
 every(15 * 60_000, "purged expired sessions", "SELECT purge_expired_sessions()");
+// Retention: delivered email events and their recipient records are removed 6 months after delivery. Unresolved ones are kept.
+every(60 * 60_000, "purged old delivered notifications", "SELECT purge_outbox(500, 20)");
 process.on("SIGTERM", () => { log("stopping"); pool.end().finally(() => process.exit(0)); });
 
 (async function main() {
