@@ -1,14 +1,14 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Banknote, BookUser, Building2, CalendarCheck, ChartColumn, CircleCheckBig, FileText, LayoutDashboard, Settings, Truck, type LucideIcon } from "lucide-react";
+import { Banknote, BookUser, Building2, CalendarCheck, ChartColumn, CircleCheckBig, FileText, LayoutDashboard, Repeat, Settings, Truck, type LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { isCurrentPath, type NavItem } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 
 const ICONS: Record<string, LucideIcon> = {
   "/": LayoutDashboard, "/requests": FileText, "/approvals": CircleCheckBig, "/accounts": Banknote, "/treasury": CalendarCheck,
-  "/suppliers": Truck, "/payees": BookUser, "/reports": ChartColumn, "/admin": Settings,
+  "/recurring": Repeat, "/suppliers": Truck, "/payees": BookUser, "/reports": ChartColumn, "/admin": Settings,
 };
 
 /** Draws the items it is given: which ones a person may see is decided once, by navFor() in lib/rbac.ts. */

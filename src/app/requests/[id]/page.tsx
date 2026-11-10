@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AccountNumber, AccountPlaceNumber } from "@/components/ui/reveal-number";
 import { notFound } from "next/navigation";
 import { Flash } from "@/components";
-import { recordExecution, workflowAction } from "../../actions";
+import { recordExecution, workflowAction, confirmRequestAmount } from "../../actions";
 import { AdjustForm } from "@/components/requests/adjust-form";
 import { ReviewActions } from "@/components/requests/review-actions";
 import { Badge } from "@/components/ui/badge";
@@ -90,6 +90,12 @@ export default async function RequestDetail({ params, searchParams }: { params: 
         </Card>
       )}
       {r.workflow_state === "AUTHENTICATED" && <p className="mute">The account has been debited. This payment stays Authenticated until reconciliation finds it on the bank statement, and it can no longer be cancelled.</p>}
+      {r.amount_is_estimate && !r.amount_confirmed_at && (
+        <div role="alert" className="note mb-3">
+          <b>The amount is an estimate</b> from a recurring payment. Check it, correct it if needed by editing the draft, then confirm it. It cannot be submitted or scheduled until it is confirmed.
+          {mine && r.workflow_state === "DRAFT" && <div className="mt-2"><ConfirmDialog title={`Confirm ${etb(r.total_amount)}?`} description="This confirms the amount for this request. You can still change the draft before you submit it." confirmLabel="Confirm the amount" cancelLabel="Not yet" action={confirmRequestAmount} fields={{ id }} trigger={<Button size="sm">Confirm the amount</Button>} /></div>}
+        </div>
+      )}
       {r.workflow_state === "SCHEDULED" && (
         <div role={r.schedule_error ? "alert" : "status"} className={`note mb-3 ${r.schedule_error ? "bad" : ""}`}>
           <b>Scheduled for {dstr(r.scheduled_for)}.</b> It is submitted for verification automatically on that date, and the amount is reserved then. Nothing is reserved now.
@@ -101,7 +107,8 @@ export default async function RequestDetail({ params, searchParams }: { params: 
       {d.restricted && <p className="mute">With group reporting you see this request's amount, account, dates and status. Who is paid, the invoice and its documents, and who handled it show only to the company's members.</p>}
       <Card title="Details">
         <dl className="m-0 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <Fact label="Total"><b>{etb(r.total_amount)}</b></Fact>
+          <Fact label="Total"><b>{etb(r.total_amount)}</b>{r.amount_is_estimate && <Badge variant={r.amount_confirmed_at ? "outline" : "warning"} className="ml-2">{r.amount_confirmed_at ? "Estimate confirmed" : "Estimate"}</Badge>}</Fact>
+          {r.recurring_occurrence && <Fact label="Recurring payment">{r.recurring_name ? <Link href="/recurring">{r.recurring_name}</Link> : "A recurring payment"}<div className="text-xs text-muted-foreground">Created for {dstr(r.recurring_occurrence)}</div></Fact>}
           {d.restricted ? null : r.supplier_id ? <Fact label="Supplier">{r.payee}{r.tin && <div className="text-xs text-muted-foreground">TIN {r.tin}</div>}</Fact>
             : <Fact label="Person">{r.payee}<div className="text-xs text-muted-foreground">{r.person_phone}, ID {d.fullId ?? maskId(r.id_last4 ?? "")}</div></Fact>}
           {!d.restricted && <Fact label="Pays to">{payTo} {(r.bank_status ?? r.person_detail_status ?? "VERIFIED") !== "VERIFIED" && <Badge variant="destructive">Not verified</Badge>}</Fact>}

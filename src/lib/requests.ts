@@ -73,6 +73,8 @@ export interface RequestRow {
   supplier_bank_detail_id: string | null; person_payment_detail_id: string | null; bank_number_state: NumberState | null; person_number_state: NumberState | null; debit_number_state: NumberState | null;
   /** Scheduled payments: the date it is submitted on, and why the last try on that date did not submit it. */
   scheduled_for: string | null; schedule_error: string | null; schedule_error_at: Date | null;
+  /** Recurring payments: the template and occurrence it was created for, and whether its amount is an estimate still to confirm. */
+  recurring_template_id: string | null; recurring_name: string | null; recurring_occurrence: string | null; amount_is_estimate: boolean; amount_confirmed_at: Date | null;
 }
 export interface InstallmentRow { seq: number; due_date: string; amount: string }
 export interface ApprovalRow { id: string; action: string; actor_role: string; reason: string | null; occurred_at: Date; full_name: string | null }
@@ -93,7 +95,8 @@ export const loadRequest = async (tx: Tx, id: string) => {
             da.available_balance AS debit_available, da.current_balance AS debit_current, da.reserved_balance AS debit_reserved, ${MEMBER} AS is_member,
             r.supplier_bank_detail_id, r.person_payment_detail_id, supplier_account_state(r.supplier_bank_detail_id) AS bank_number_state,
             person_account_state(r.person_payment_detail_id) AS person_number_state, account_number_state(r.debit_account_id) AS debit_number_state,
-            r.scheduled_for, r.schedule_error, r.schedule_error_at
+            r.scheduled_for, r.schedule_error, r.schedule_error_at,
+            r.recurring_template_id, (SELECT t.name FROM recurring_payment_templates t WHERE t.id = r.recurring_template_id) AS recurring_name, r.recurring_occurrence, r.amount_is_estimate, r.amount_confirmed_at
        FROM payment_requests r JOIN companies c ON c.id = r.debtor_company_id LEFT JOIN suppliers s ON s.id = r.supplier_id LEFT JOIN person_payees p ON p.id = r.person_payee_id
        LEFT JOIN person_payment_details pd ON pd.id = r.person_payment_detail_id LEFT JOIN supplier_bank_details b ON b.id = r.supplier_bank_detail_id LEFT JOIN users u ON u.id = r.created_by
        LEFT JOIN company_bank_accounts da ON da.id = r.debit_account_id LEFT JOIN banks dk ON dk.id = da.bank_id WHERE r.id = $1`, [id]))[0];

@@ -12,6 +12,8 @@ every(60 * 60_000, "queued overdue reminders", "SELECT enqueue_overdue_requests(
 every(60 * 60_000, "queued missing opening balances", "SELECT enqueue_missing_openings()");
 // Scheduled requests due today (Addis Ababa) are submitted, and their funds reserved, through the normal submission checks.
 every(15 * 60_000, "submitted scheduled requests", "SELECT release_scheduled_requests()");
+// Recurring payments: a Draft for each occurrence that has come. Never submitted, scheduled or reserved, and no email.
+every(15 * 60_000, "created recurring drafts", "SELECT generate_recurring_requests()");
 every(15 * 60_000, "purged expired sessions", "SELECT purge_expired_sessions()");
 process.on("SIGTERM", () => { log("stopping"); pool.end().finally(() => process.exit(0)); });
 
