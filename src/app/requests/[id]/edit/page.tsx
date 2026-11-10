@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { Flash } from "@/components";
 import { saveAndScheduleDraft, saveAndSubmitDraft, saveDraft, saveScheduledChanges } from "../../../actions";
 import { ScheduleField } from "@/components/requests/schedule-field";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { dstr, etb, PAYMENT_METHODS, accountPlace } from "@/lib/format";
 import { withUser } from "@/lib/db";
 import { requireAccess } from "@/lib/rbac";
@@ -59,8 +60,8 @@ export default async function EditRequest({ params, searchParams }: { params: Pr
         </div>
         {(scheduled || canSchedule) && <><h2>{scheduled ? "Scheduled date" : "Or schedule it"}</h2><ScheduleField defaultValue={scheduled ? dstr(r.scheduled_for) : null} /></>}
         {scheduled
-          ? <div className="inline" style={{ marginTop: 14 }}><button>Save changes (stays scheduled)</button></div>
-          : <div className="inline" style={{ marginTop: 14 }}><button formAction={saveAndSubmitDraft}>Save and submit (reserve funds)</button>{canSchedule && <button className="sec" formAction={saveAndScheduleDraft}>Save and schedule</button>}<button className="sec">Save changes</button></div>}
+          ? <div className="inline" style={{ marginTop: 14 }}><SubmitButton plain>Save changes (stays scheduled)</SubmitButton></div>
+          : <div className="inline" style={{ marginTop: 14 }}><SubmitButton plain formAction={saveAndSubmitDraft}>Save and submit (reserve funds)</SubmitButton>{canSchedule && <SubmitButton plain className="sec" formAction={saveAndScheduleDraft}>Save and schedule</SubmitButton>}<SubmitButton plain className="sec">Save changes</SubmitButton></div>}
       </form>
     </>
   );

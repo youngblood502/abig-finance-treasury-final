@@ -1,9 +1,8 @@
 "use client";
 import * as React from "react";
-import { useFormStatus } from "react-dom";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 
 export interface ConfirmDialogProps {
   /** The control that opens the dialog. */
@@ -12,6 +11,8 @@ export interface ConfirmDialogProps {
   /** What will change, for example Before, After, Difference. */
   effect?: { label: string; value: React.ReactNode }[];
   confirmLabel: string; cancelLabel?: string; destructive?: boolean;
+  /** What the confirm button says while the action runs. By default it is worked out from confirmLabel ("Verify" → "Verifying…"). */
+  pendingLabel?: string;
   /** A server action. It receives `fields` as form data, as any form on the site would. */
   action: (data: FormData) => void | Promise<void>;
   fields?: Record<string, string>;
@@ -19,17 +20,13 @@ export interface ConfirmDialogProps {
   children?: React.ReactNode;
 }
 
-/** Disabled while the request is on its way, so nothing is sent twice. */
-function ConfirmButton({ label, destructive }: { label: string; destructive: boolean }) {
-  const { pending } = useFormStatus();
-  return <Button type="submit" variant={destructive ? "destructive" : "default"} disabled={pending}>{pending && <LoaderCircle className="animate-spin" aria-hidden="true" />}{label}</Button>;
-}
 
 /** Asks before an action that moves money or changes access, and shows its effect. Cancel takes the first focus, so Enter cannot confirm by accident. */
-export function ConfirmDialog({ trigger, title, description, effect, confirmLabel, cancelLabel = "Cancel", destructive = false, action, fields = {}, children }: ConfirmDialogProps) {
+export function ConfirmDialog({ trigger, title, description, effect, confirmLabel, cancelLabel = "Cancel", destructive = false, pendingLabel, action, fields = {}, children }: ConfirmDialogProps) {
   const [open, setOpen] = React.useState(false);
   const cancel = React.useRef<HTMLButtonElement>(null);
-  const run = async (data: FormData) => { await action(data); setOpen(false); };
+  // The dialog closes once the action has finished, whether it succeeded or not; the page then shows the success or error message.
+  const run = async (data: FormData) => { try { await action(data); } finally { setOpen(false); } };
   return (
     <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
       <DialogPrimitive.Trigger asChild>{trigger}</DialogPrimitive.Trigger>
@@ -49,7 +46,7 @@ export function ConfirmDialog({ trigger, title, description, effect, confirmLabe
             {children}
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <DialogPrimitive.Close asChild><Button ref={cancel} type="button" variant="outline">{cancelLabel}</Button></DialogPrimitive.Close>
-              <ConfirmButton label={confirmLabel} destructive={destructive} />
+              <SubmitButton variant={destructive ? "destructive" : "default"} pendingText={pendingLabel}>{confirmLabel}</SubmitButton>
             </div>
           </form>
         </DialogPrimitive.Content>

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ExportButton } from "@/components/ui/export-button";
 import { Flash, ShortfallChip } from "@/components";
 import { TabLinks } from "@/components/layout/tab-links";
 import { Badge } from "@/components/ui/badge";
@@ -21,7 +22,8 @@ const Totals = ({ title, rows }: { title: string; rows: { label: string; total: 
   </section>
 );
 const Panel = ({ children }: { children: React.ReactNode }) => <div className="mb-3 rounded-xl border bg-card p-4">{children}</div>;
-const Download = ({ kind, query }: { kind: string; query?: string }) => <Button asChild variant="outline" size="sm"><a href={`/reports/export/${kind}${query ? `?${query}` : ""}`}>Download CSV</a></Button>;
+/** The export route checks access as before; the button shows "Preparing…" and any error while the file is fetched. */
+const Download = ({ kind, query }: { kind: string; query?: string }) => <ExportButton href={`/reports/export/${kind}${query ? `?${query}` : ""}`} />;
 function FilterBar({ tab, f, kind, search, payments }: { tab: string; f: ReportFilters; kind: string; search?: string; payments?: boolean }) {
   return (
     <form method="get" action="/reports" className="mb-3 grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-2 lg:grid-cols-4" aria-label="Filter this report">

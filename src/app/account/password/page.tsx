@@ -1,4 +1,5 @@
 import { Flash } from "@/components";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { changePasswordAction } from "../../auth-actions";
 import { getSession } from "@/lib/session";
 
@@ -12,7 +13,7 @@ export default async function Password({ searchParams }: { searchParams: Promise
         <label className="f">Current password<input name="current" type="password" autoComplete="current-password" required /></label>
         <label className="f">New password (at least 12 characters)<input name="next" type="password" autoComplete="new-password" minLength={12} required /></label>
         <label className="f">New password again<input name="again" type="password" autoComplete="new-password" minLength={12} required /></label>
-        <button>Change password</button>
+        <SubmitButton plain>Change password</SubmitButton>
       </form>
     </div>
   );
