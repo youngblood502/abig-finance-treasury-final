@@ -71,6 +71,8 @@ export interface RequestRow {
   debit_label: string | null; account_kind: string | null; wallet_phone: string | null; debit_bank: string | null; debit_last4: string | null; debit_available: string | null; debit_current: string | null; debit_reserved: string | null; is_member: boolean;
   // Ids and reveal states for the eye buttons. The states are the database's answer for this person; no number is loaded here.
   supplier_bank_detail_id: string | null; person_payment_detail_id: string | null; bank_number_state: NumberState | null; person_number_state: NumberState | null; debit_number_state: NumberState | null;
+  /** Scheduled payments: the date it is submitted on, and why the last try on that date did not submit it. */
+  scheduled_for: string | null; schedule_error: string | null; schedule_error_at: Date | null;
 }
 export interface InstallmentRow { seq: number; due_date: string; amount: string }
 export interface ApprovalRow { id: string; action: string; actor_role: string; reason: string | null; occurred_at: Date; full_name: string | null }
@@ -78,7 +80,7 @@ export interface AdjustmentRow { id: string; field: string; old_value: string | 
 export interface FileRow { id: string; kind: string; filename: string; uploaded_at: Date; replaced: number | null }
 
 /** What a group reporter does not get. Applied to everything loadRequest returns, so no page can show it by mistake. */
-const PRIVATE_FIELDS: (keyof RequestRow)[] = ["payee", "tin", "bank_name", "account_last4", "bank_status", "creator_name", "person_phone", "id_last4", "person_kind", "person_bank", "person_last4", "telebirr_phone", "person_detail_status", "supplier_bank_detail_id", "person_payment_detail_id", "bank_number_state", "person_number_state", "invoice_ref", "invoice_date", "description", "cheque_no", "bank_reference"];
+const PRIVATE_FIELDS: (keyof RequestRow)[] = ["payee", "tin", "bank_name", "account_last4", "bank_status", "creator_name", "person_phone", "id_last4", "person_kind", "person_bank", "person_last4", "telebirr_phone", "person_detail_status", "supplier_bank_detail_id", "person_payment_detail_id", "bank_number_state", "person_number_state", "schedule_error", "schedule_error_at", "invoice_ref", "invoice_date", "description", "cheque_no", "bank_reference"];
 export const maskRequest = (r: RequestRow): RequestRow => ({ ...r, ...Object.fromEntries(PRIVATE_FIELDS.map((k) => [k, null])) });
 
 export const loadRequest = async (tx: Tx, id: string) => {
@@ -90,7 +92,8 @@ export const loadRequest = async (tx: Tx, id: string) => {
             da.account_label AS debit_label, da.account_kind::text AS account_kind, da.wallet_phone, dk.name AS debit_bank, da.account_last4 AS debit_last4,
             da.available_balance AS debit_available, da.current_balance AS debit_current, da.reserved_balance AS debit_reserved, ${MEMBER} AS is_member,
             r.supplier_bank_detail_id, r.person_payment_detail_id, supplier_account_state(r.supplier_bank_detail_id) AS bank_number_state,
-            person_account_state(r.person_payment_detail_id) AS person_number_state, account_number_state(r.debit_account_id) AS debit_number_state
+            person_account_state(r.person_payment_detail_id) AS person_number_state, account_number_state(r.debit_account_id) AS debit_number_state,
+            r.scheduled_for, r.schedule_error, r.schedule_error_at
        FROM payment_requests r JOIN companies c ON c.id = r.debtor_company_id LEFT JOIN suppliers s ON s.id = r.supplier_id LEFT JOIN person_payees p ON p.id = r.person_payee_id
        LEFT JOIN person_payment_details pd ON pd.id = r.person_payment_detail_id LEFT JOIN supplier_bank_details b ON b.id = r.supplier_bank_detail_id LEFT JOIN users u ON u.id = r.created_by
        LEFT JOIN company_bank_accounts da ON da.id = r.debit_account_id LEFT JOIN banks dk ON dk.id = da.bank_id WHERE r.id = $1`, [id]))[0];
@@ -132,7 +135,7 @@ export const reviewQueue = (tx: Tx, company: string | null) => tx.q<ReviewRow>(
  * `stage` comes from app_actionable_requests(), so verifying and authenticating can never both be offered, and neither is offered to the request's creator.
  */
 export const requestActions = (state: string, mine: boolean, stage: ApprovalStage | null, canRecord: boolean) => ({
-  edit: mine && state === "DRAFT",
+  edit: mine && (state === "DRAFT" || state === "SCHEDULED"),
   submit: mine && state === "DRAFT",
   cancel: mine && ["DRAFT", "SCHEDULED", "RESERVED", "VERIFIED"].includes(state),
   verify: stage === "VERIFICATION",

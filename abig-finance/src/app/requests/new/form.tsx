@@ -1,7 +1,8 @@
 "use client";
 import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import { createAndSubmitRequest, createRequest } from "../../actions";
+import { createAndScheduleRequest, createAndSubmitRequest, createRequest } from "../../actions";
+import { ScheduleField } from "@/components/requests/schedule-field";
 import { AmountInput } from "@/components/ui/amount-input";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -14,7 +15,7 @@ let nextRow = 1;
 const newRow = () => ({ key: nextRow++, due: "", amount: "" });
 
 /** Company, then payee, then method and account. Every field keeps the name createRequest has always read. */
-export default function NewRequestForm({ payees, accounts, startCompany }: { payees: FormPayee[]; accounts: FormAccount[]; startCompany: string | null }) {
+export default function NewRequestForm({ payees, accounts, startCompany, canSchedule = false }: { payees: FormPayee[]; accounts: FormAccount[]; startCompany: string | null; canSchedule?: boolean }) {
   const companies = [...new Map(payees.map((p) => [p.company_id, p.company])).entries()];
   const [companyId, setCompanyId] = useState(companies.some(([id]) => id === startCompany) ? startCompany! : companies[0][0]);
   const [target, setTarget] = useState("");
@@ -75,8 +76,11 @@ export default function NewRequestForm({ payees, accounts, startCompany }: { pay
         {over && account.shortfall_amount === 0 && <div role="alert" className="note bad mt-2">The total is more than the available balance. You can save a draft, but it cannot be submitted until the account has enough.</div>}
       </Step>
 
+      {canSchedule && <Step title="Or schedule it"><ScheduleField firstDue={rows.map((r) => r.due).filter(Boolean).sort()[0]} /></Step>}
+
       <div className="flex flex-wrap gap-2">
         <SubmitButton formAction={createAndSubmitRequest} disabled={!target}>Save and submit (reserve funds)</SubmitButton>
+        {canSchedule && <SubmitButton formAction={createAndScheduleRequest} variant="outline" disabled={!target}>Save and schedule</SubmitButton>}
         <SubmitButton variant="outline" disabled={!target}>Save as draft</SubmitButton>
       </div>
       {!target && <p className="mute mt-2">Choose a payee to continue.</p>}
