@@ -60,10 +60,10 @@
     "semantic_hash": "e82c15f1acb32763fdd78d9a118804d4"
   },
   "abig-finance/ops/restore-drill.sh": {
-    "mtime": 1793769131.0,
-    "seen": 1793860867.2881856,
-    "ast_hash": "55cbd8f451381465f78a1ccd40103048",
-    "semantic_hash": "55cbd8f451381465f78a1ccd40103048"
+    "mtime": 1794294642.1134577,
+    "seen": 1794295201.0046985,
+    "ast_hash": "7d4ebd9b4eaf141cd5dbe1f580708039",
+    "semantic_hash": ""
   },
   "abig-finance/ops/verify-integrity.sql": {
     "mtime": 1794216079.0820332,
@@ -1188,9 +1188,9 @@
     "semantic_hash": ""
   },
   "abig-finance/tests/obsolete-functions.test.ts": {
-    "mtime": 1794231360.7820475,
-    "seen": 1794231538.0159702,
-    "ast_hash": "9d57ed6b2b9bf10e0e8211594352cc0e",
+    "mtime": 1794294686.8541298,
+    "seen": 1794295201.0046985,
+    "ast_hash": "5f7db28d94f922e6ed3bf037ecf3cdc7",
     "semantic_hash": ""
   },
   "abig-finance/prisma/migrations/20261110000000_scheduled_payments/migration.sql": {
@@ -1265,12 +1265,6 @@
     "ast_hash": "cc4cfcd0ededf41ddcd65eabbcb65e41",
     "semantic_hash": ""
   },
-  "abig-finance/ops/pending/remove-legacy-engine.sql": {
-    "mtime": 1794293073.4301953,
-    "seen": 1794293352.9879625,
-    "ast_hash": "d0f2cded49896c9eab72f15a1fa77230",
-    "semantic_hash": ""
-  },
   "abig-finance/prisma/migrations/20261110000300_outbox_retention/migration.sql": {
     "mtime": 1794293006.8726304,
     "seen": 1794293353.0017066,
@@ -1278,15 +1272,27 @@
     "semantic_hash": ""
   },
   "abig-finance/tests/outbox-retention.test.ts": {
-    "mtime": 1794293148.90148,
-    "seen": 1794293353.003707,
-    "ast_hash": "109e1f6408f403a03200a5dd77f13c45",
+    "mtime": 1794294720.8294833,
+    "seen": 1794295201.0046985,
+    "ast_hash": "3af8585dbf953b8a96c7abd1507b33b4",
     "semantic_hash": ""
   },
   "abig-finance/docs/LEGACY-CLEANUP.md": {
-    "mtime": 1794293095.4107697,
-    "seen": 1794293353.0045333,
-    "ast_hash": "e11a2317744443cf674a5113dffa78e3",
+    "mtime": 1794294645.1486528,
+    "seen": 1794295201.0046985,
+    "ast_hash": "3a1ea72a379eed0f91cab0a9bd32c5f6",
+    "semantic_hash": ""
+  },
+  "abig-finance/prisma/migrations/20261110000400_remove_legacy_engine/migration.sql": {
+    "mtime": 1794294609.7626266,
+    "seen": 1794295201.0046985,
+    "ast_hash": "abab4445551b8f1e04471d13ab159fc3",
+    "semantic_hash": ""
+  },
+  "abig-finance/tests/legacy-removal.test.ts": {
+    "mtime": 1794294764.8730025,
+    "seen": 1794295201.0046985,
+    "ast_hash": "def7ac7055a84b07a26ada8c19d2c7a9",
     "semantic_hash": ""
   },
   "abig-finance/package-lock.json": {

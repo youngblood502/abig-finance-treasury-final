@@ -1,8 +1,9 @@
 -- ABIG Finance - Phase 6 Task 4 (part 2): remove the old treasury engine.
 --
--- PREPARED, NOT APPLIED. This file is deliberately outside prisma/migrations, so ops/migrate.mjs never runs it. It drops tables and functions
--- and cannot be undone except by restoring a backup. Follow docs/LEGACY-CLEANUP.md first: a verified backup, the read-only emptiness checks on the
--- live database, and a rehearsal on a restored copy. To apply it, copy it into a new prisma/migrations/<timestamp>_remove_legacy_engine folder.
+-- Part of the normal migration sequence for a fresh installation: on a new database these tables were created by earlier migrations and have
+-- never held data, so they are removed here. The checks below still refuse to drop anything if a table holds rows or something unexpected
+-- depends on the tables, so the migration cannot destroy data even if it is ever run against a database that was used. The old live database is
+-- not migrated (see docs/LEGACY-CLEANUP.md).
 --
 -- What it removes (the six tables named in the development plan, and everything that depends on them):
 --   Tables     cash_reservations, cash_ledger_entries, payment_transactions, payment_reversals, bank_balance_snapshots, account_use_approvals

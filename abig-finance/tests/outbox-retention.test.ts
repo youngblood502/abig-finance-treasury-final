@@ -2,9 +2,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
-import { actAs, ASKU, authorized, CBE, fails, fn, mk, rows, setupDb, user } from "./helpers";
+import { actAs, ASKU, CBE, fails, fn, mk, rows, setupDb, user } from "./helpers";
 
-// Phase 6 Task 4: outbox retention, and a rehearsal of the prepared (not applied) legacy removal script.
+// Phase 6 Task 4: outbox retention. (The legacy engine removal is tested in legacy-removal.test.ts.)
 let owner: Client; let as: Awaited<ReturnType<typeof setupDb>>["as"]; let workerUrl: string; let request: string;
 beforeAll(async () => {
   const d = await setupDb("abig_test_retention"); owner = d.owner; as = d.as; workerUrl = d.workerUrl;
@@ -106,41 +106,5 @@ describe("safety", () => {
       const claimed = (await w.query("SELECT id, lease_token FROM outbox_claim(20) WHERE request_id = $1", [id])).rows;
       expect(claimed.length).toBeGreaterThan(0);
     } finally { await w.end(); }
-  });
-});
-
-describe("the prepared legacy removal (rehearsed in a transaction that is always rolled back)", () => {
-  const SQL = readFileSync(join(__dirname, "../ops/pending/remove-legacy-engine.sql"), "utf8");
-  const LEGACY = ["cash_reservations", "cash_ledger_entries", "payment_transactions", "payment_reversals", "bank_balance_snapshots", "account_use_approvals"];
-  it("is not a migration, so ops/migrate.mjs never runs it", () => {
-    expect(readFileSync(join(__dirname, "../ops/migrate.mjs"), "utf8")).toMatch(/prisma", "migrations"/);
-    expect(SQL).toMatch(/PREPARED, NOT APPLIED/);
-  });
-  it("removes the six tables and their functions cleanly, and the current workflow, access withdrawal and integrity check still work", async () => {
-    await tx(async (c) => {
-      await c.query(SQL);
-      expect((await rows(c, "SELECT count(*)::int n FROM pg_class WHERE relname = ANY($1) AND relkind = 'r'", [LEGACY]))[0].n).toBe(0);
-      expect((await rows(c, "SELECT count(*)::int n FROM pg_proc WHERE proname IN ('treasury_reserve','_cash_position','access_revoked_release','installment_outstanding','report_payments')"))[0].n).toBe(0);
-      expect(await rows(c, "SELECT 1 FROM pg_type WHERE typname = 'cash_position'")).toHaveLength(0);
-      // The current money workflow still runs end to end.
-      const { id } = await authorized(c, { amounts: [500] });
-      expect((await rows(c, "SELECT workflow_state::text s FROM payment_requests WHERE id = $1", [id]))[0].s).toBe("AUTHENTICATED");
-      // Withdrawing a company's access to a shared account still works now that its old trigger is gone.
-      await actAs(c, user.abebe);
-      await c.query("UPDATE company_bank_account_access SET revoked_at = now() WHERE account_id = $1 AND company_id = 'c0000000-0000-4000-8000-000000000002'", [CBE]);
-      expect(await integrity(c)).toEqual([]);
-    });
-    // Rolled back: everything is still there.
-    expect((await rows(owner, "SELECT count(*)::int n FROM pg_class WHERE relname = ANY($1) AND relkind = 'r'", [LEGACY]))[0].n).toBe(6);
-    expect((await rows(owner, "SELECT count(*)::int n FROM pg_trigger WHERE tgname = 'account_access_release'"))[0].n).toBe(1);
-  });
-  it("refuses to run when a legacy table is not empty", async () => {
-    await tx(async (c) => {
-      await c.query("ALTER TABLE bank_balance_snapshots DISABLE TRIGGER USER");
-      const cols = await rows(c, "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'bank_balance_snapshots' AND is_nullable = 'NO' AND column_default IS NULL");
-      const vals = cols.map((k) => (k.column_name === "account_id" ? `'${CBE}'` : k.column_name === "entered_by" ? `'${user.samuel}'` : k.data_type.includes("time") ? "now()" : k.data_type === "date" ? "current_date" : k.data_type === "numeric" ? "1" : "'X'"));
-      await c.query(`INSERT INTO bank_balance_snapshots (${cols.map((k) => k.column_name).join(",")}) VALUES (${vals.join(",")})`);
-      expect(await fails(c, SQL)).toMatch(/legacy table bank_balance_snapshots still has 1 row/);
-    });
   });
 });
