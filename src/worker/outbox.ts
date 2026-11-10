@@ -14,6 +14,8 @@ every(60 * 60_000, "queued missing opening balances", "SELECT enqueue_missing_op
 every(15 * 60_000, "submitted scheduled requests", "SELECT release_scheduled_requests()");
 // Recurring payments: a Draft for each occurrence that has come. Never submitted, scheduled or reserved, and no email.
 every(15 * 60_000, "created recurring drafts", "SELECT generate_recurring_requests()");
+// In-app notifications: copies new actionable outbox events to each recipient's bell. Email delivery is not affected.
+every(30_000, "added in-app notifications", "SELECT fan_out_notifications(200)");
 every(15 * 60_000, "purged expired sessions", "SELECT purge_expired_sessions()");
 process.on("SIGTERM", () => { log("stopping"); pool.end().finally(() => process.exit(0)); });
 

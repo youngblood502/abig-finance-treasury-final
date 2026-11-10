@@ -5,6 +5,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { accountInCompany } from "@/lib/company";
 import { companyScope, myCompanies } from "@/lib/company-scope";
 import { withUser } from "@/lib/db";
+import { loadBell } from "@/lib/notifications";
 import { devUsers, getMe, type Me } from "@/lib/session";
 import { navFor, ROLE_LABEL } from "@/lib/rbac";
 
@@ -36,6 +37,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     "/treasury": has("/treasury") ? (await tx.q<{ n: number }>(`SELECT count(*)::int AS n FROM account_week_status() s WHERE s.can_check AND NOT s.has_opening AND ${accountInCompany("s.account_id", "$1")}`, [company]))[0].n : 0,
   })) : null;
   const items = nav.map((m) => ({ path: m.path, label: m.label, count: (counts as Record<string, number> | null)?.[m.path] ?? 0 }));
+  // The bell: only this person's own notifications (row-level security), once they have finished signing in.
+  const bell = signedIn ? await withUser(signedIn.id, (tx) => loadBell(tx)).catch(() => null) : null;
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -44,7 +47,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       </head>
       <body suppressHydrationWarning>
         {!me ? <main className="mx-auto max-w-[900px] p-4 md:px-7 md:py-6">{children}</main> : (
-          <AppShell items={items} name={me.name} details={accessLines(me)} companies={companies} company={company} devUsers={users} userId={me.id}>{children}</AppShell>
+          <AppShell items={items} name={me.name} details={accessLines(me)} companies={companies} company={company} devUsers={users} userId={me.id} bell={bell}>{children}</AppShell>
         )}
       </body>
     </html>

@@ -15,6 +15,7 @@ import { statementReturnPath } from "@/lib/reconciliation";
 import { canChangeSupplierStatus } from "@/lib/payee-screens";
 import { PERSON_DETAIL_FOR_METHOD, protectIdNumber } from "@/lib/payees";
 import { protectAccountNumber } from "@/lib/account-numbers";
+import { notificationLink } from "@/lib/notification-text";
 import { runWorkflow, type WorkflowAction } from "@/lib/workflow";
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
@@ -352,4 +353,26 @@ export async function confirmRequestAmount(f: FormData) {
   const id = str(f, "id");
   return act(`/requests/${id}`, "Amount confirmed. The request can now be submitted or scheduled.",
     guard(["payment_request:create"], (uid) => dbl(withUser(uid, (tx) => tx.q("SELECT confirm_request_amount($1)", [id])))));
+}
+
+// ---------- In-app notifications ----------
+// Only the signed-in person's own notifications change: the database functions match on app_user_id().
+/** Marks one notification read and opens what it is about. The link is taken from the person's own notification, never from the form. */
+export async function openNotification(f: FormData) {
+  const id = str(f, "id"); const uid = await currentUserId(); let to = "/";
+  try {
+    to = await dbl(withUser(uid, async (tx) => {
+      await tx.q("SELECT mark_notification_read($1)", [id]);
+      const n = (await tx.q<{ event_type: string; request_id: string | null; payload: Record<string, string> }>("SELECT event_type, request_id, payload FROM user_notifications WHERE id = $1", [id]))[0];
+      return n ? notificationLink(n) : "/";
+    }));
+  } catch { to = "/"; }
+  revalidatePath("/", "layout");
+  redirect(to.startsWith("/") && !to.startsWith("//") ? to : "/");
+}
+export async function markAllNotificationsRead(f: FormData) {
+  const back = str(f, "back"); const uid = await currentUserId();
+  await dbl(withUser(uid, (tx) => tx.q("SELECT mark_all_notifications_read()"))).catch(() => {});
+  revalidatePath("/", "layout");
+  redirect(back.startsWith("/") && !back.startsWith("//") ? back : "/");
 }
