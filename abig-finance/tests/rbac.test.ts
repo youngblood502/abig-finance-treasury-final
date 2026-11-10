@@ -14,7 +14,7 @@ const paths = (m: Me) => navFor(m).map((x) => x.path);
 describe("what each role is offered", () => {
   it("Accountant: requests, accounts, suppliers and reports; no approvals and no administration", () => {
     const m = me({ perms: ACCOUNTANT });
-    expect(paths(m)).toEqual(["/", "/requests", "/accounts", "/treasury", "/suppliers", "/reports"]);
+    expect(paths(m)).toEqual(["/", "/requests", "/accounts", "/treasury", "/recurring", "/suppliers", "/reports"]);
     expect(canAccess(m, "/requests/new")).toBe(true); expect(canAccess(m, "/approvals")).toBe(false); expect(canAccess(m, "/admin")).toBe(false);
     expect(can(m, "payment_request:verify")).toBe(false); expect(can(m, "payment_request:authenticate")).toBe(false); expect(can(m, "user:manage")).toBe(false);
   });
@@ -26,13 +26,13 @@ describe("what each role is offered", () => {
   });
   it("Owner: every module except administration; authenticates; does not create requests or enter balances", () => {
     const m = me({ perms: OWNER });
-    expect(paths(m)).toEqual(["/", "/requests", "/approvals", "/accounts", "/suppliers", "/reports"]);
+    expect(paths(m)).toEqual(["/", "/requests", "/approvals", "/accounts", "/recurring", "/suppliers", "/reports"]);
     expect(can(m, "payment_request:authenticate")).toBe(true); expect(can(m, "payment_request:verify")).toBe(false); expect(can(m, "user:manage")).toBe(false);
     expect(can(m, "payment_request:create")).toBe(false); expect(can(m, "bank_balance:update")).toBe(false); expect(canAccess(m, "/admin")).toBe(false);
   });
   it("Administrator: everything, including administration", () => {
     const m = me({ isAdmin: true });
-    expect(paths(m)).toEqual(["/", "/requests", "/approvals", "/accounts", "/treasury", "/suppliers", "/payees", "/reports", "/admin"]);
+    expect(paths(m)).toEqual(["/", "/requests", "/approvals", "/accounts", "/treasury", "/recurring", "/suppliers", "/payees", "/reports", "/admin"]);
     expect(can(m, "user:manage")).toBe(true); expect(can(m, "payment_request:authenticate")).toBe(true); expect(canAccess(m, "/requests/new")).toBe(true);
   });
   it("group reporting people read requests, accounts and reports but cannot act or administer", () => {
