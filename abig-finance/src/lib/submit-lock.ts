@@ -18,7 +18,11 @@ export interface SubmitLock {
  * A lock that releases itself after `safetyMs` unless the submission is confirmed as started (hold), so a submission that never starts cannot
  * leave a form locked for good, and one that is still running is never unlocked by the timer.
  */
-export function createSubmitLock(safetyMs = 30_000, timers: { set: typeof setTimeout; clear: typeof clearTimeout } = { set: setTimeout, clear: clearTimeout }): SubmitLock {
+type Timers = { set: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>; clear: (id: ReturnType<typeof setTimeout>) => void };
+// Called as plain functions: a browser refuses setTimeout called as a method of another object ("Illegal invocation").
+const browserTimers: Timers = { set: (fn, ms) => setTimeout(fn, ms), clear: (id) => clearTimeout(id) };
+
+export function createSubmitLock(safetyMs = 30_000, timers: Timers = browserTimers): SubmitLock {
   let held = false; let generation = 0; let timer: ReturnType<typeof setTimeout> | null = null;
   const stopTimer = () => { if (timer !== null) { timers.clear(timer); timer = null; } };
   return {

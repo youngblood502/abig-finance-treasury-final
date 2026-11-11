@@ -13,6 +13,32 @@ const DISABLED = / disabled=""/;   // the attribute, not the disabled: style cla
 const form = (valid = true) => ({ checkValidity: () => valid });
 afterEach(() => { vi.useRealTimers(); });
 
+describe("timers as a browser runs them", () => {
+  // A browser throws "Illegal invocation" when setTimeout or clearTimeout is called as a method of another object; Node does not. These
+  // stand-ins behave like the browser, so a lock or bar that calls them wrongly fails here instead of on the first click in the app.
+  const strict = (real: (...a: never[]) => unknown) => function (this: unknown, ...a: never[]) {
+    if (this !== undefined && this !== globalThis) throw new TypeError("Illegal invocation");
+    return real(...a);
+  };
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it("the submit lock takes, holds and releases with the browser's own timers", async () => {
+    vi.stubGlobal("setTimeout", strict(setTimeout as never)); vi.stubGlobal("clearTimeout", strict(clearTimeout as never));
+    const lock = createSubmitLock();
+    expect(lock.tryAcquire()).toBe(true);
+    lock.hold(lock.generation); lock.release(lock.generation);
+    expect(claimSubmission({ checkValidity: () => true })).toBe("proceed");
+  });
+
+  it("the navigation bar starts and finishes with the browser's own timers", async () => {
+    vi.stubGlobal("setTimeout", strict(setTimeout as never)); vi.stubGlobal("clearTimeout", strict(clearTimeout as never));
+    const { createProgress } = await import("@/lib/nav-progress");
+    const p = createProgress(() => {});
+    p.start(); p.done(); p.cancel();
+    expect(p.state.visible).toBe(false);
+  });
+});
+
 describe("the form submission lock", () => {
   it("lets the first click through and cancels a second click or Enter until the submission finishes", () => {
     const f = form();
