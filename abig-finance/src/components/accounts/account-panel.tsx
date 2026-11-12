@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { grantAccess, revokeAccess, setAccountNumber, setAccountPolicy, setDepositAlert } from "@/app/actions";
+import { AccountStatus } from "@/components/accounts/account-status";
 import { BalanceLog } from "@/components/treasury/balance-log";
 import { AmountInput } from "@/components/ui/amount-input";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +32,8 @@ export function AccountPanel({ a, openWeek, companies }: { a: AccountRow; openWe
       </dl>
       {a.users.length > 1 && <p className="m-0 mt-2 text-sm text-muted-foreground">These are the account&apos;s figures, shared by every company on it.</p>}
       {openWeek && a.is_active && <p className="m-0 mt-2 text-sm"><Link href={`/treasury/${a.id}`}>{a.can_update ? "Enter a balance check" : "Open this account's week"}</Link></p>}
+
+      <AccountStatus a={a} />
 
       <Section title="Ownership and access">
         <p className="m-0 mb-2 text-sm">Legal owner: <b>{a.owner ?? "None"}</b></p>

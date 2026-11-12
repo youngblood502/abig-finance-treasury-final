@@ -69,6 +69,8 @@ export interface RequestRow {
   debit_account_id: string | null; company: string; payee: string | null; tin: string | null; bank_name: string | null; account_last4: string | null; bank_status: string | null; creator_name: string | null;
   person_phone: string | null; id_last4: string | null; person_kind: string | null; person_bank: string | null; person_last4: string | null; telebirr_phone: string | null; person_detail_status: string | null;
   debit_label: string | null; account_kind: string | null; wallet_phone: string | null; debit_bank: string | null; debit_last4: string | null; debit_available: string | null; debit_current: string | null; debit_reserved: string | null; is_member: boolean;
+  /** Whether the debit account is in use. An inactive account takes no new reservations, approvals or execution records. */
+  debit_active: boolean | null; debit_deactivated_at: Date | null; debit_deactivation_reason: string | null;
   // Ids and reveal states for the eye buttons. The states are the database's answer for this person; no number is loaded here.
   supplier_bank_detail_id: string | null; person_payment_detail_id: string | null; bank_number_state: NumberState | null; person_number_state: NumberState | null; debit_number_state: NumberState | null;
   /** Scheduled payments: the date it is submitted on, and why the last try on that date did not submit it. */
@@ -93,6 +95,7 @@ export const loadRequest = async (tx: Tx, id: string) => {
             p.phone AS person_phone, p.id_last4, pd.kind AS person_kind, pd.bank_name AS person_bank, pd.account_last4 AS person_last4, pd.telebirr_phone, pd.status AS person_detail_status,
             da.account_label AS debit_label, da.account_kind::text AS account_kind, da.wallet_phone, dk.name AS debit_bank, da.account_last4 AS debit_last4,
             da.available_balance AS debit_available, da.current_balance AS debit_current, da.reserved_balance AS debit_reserved, ${MEMBER} AS is_member,
+            da.is_active AS debit_active, da.deactivated_at AS debit_deactivated_at, da.deactivation_reason::text AS debit_deactivation_reason,
             r.supplier_bank_detail_id, r.person_payment_detail_id, supplier_account_state(r.supplier_bank_detail_id) AS bank_number_state,
             person_account_state(r.person_payment_detail_id) AS person_number_state, account_number_state(r.debit_account_id) AS debit_number_state,
             r.scheduled_for, r.schedule_error, r.schedule_error_at,

@@ -40,6 +40,19 @@ export const etbOrBlank = (v: unknown) => (v === null || v === undefined ? "" : 
 export const PRIVATE_LOG_NOTE = "This account is shared. Other companies' payments are not listed, so the balance can change between entries.";
 export const WEEK_STATUS: Record<string, string> = { OPEN: "Open", RECONCILING: "Being reconciled", LOCKED: "Locked" };
 export const ACCOUNT_KINDS: Record<string, string> = { BANK: "Bank account", WALLET: "Telebirr wallet", CASH: "Cash" };
+/** Why an account was taken out of use. The database holds the same four. */
+export const DEACTIVATION_REASONS: Record<string, string> = {
+  PROVIDER_SUSPENDED: "The bank or provider deactivated or suspended the account", COMPANY_DECISION: "The company chose to stop using the account",
+  PERMANENTLY_CLOSED: "The account is permanently closed", OTHER: "Other",
+};
+/** What a request on an inactive account still needs, by its state. */
+export const INACTIVE_ACCOUNT_NOTE: Record<string, string> = {
+  SCHEDULED: "It will not be submitted on its date. Once the account is back in use, its creator must schedule it again; or change it to another account, or cancel it.",
+  RESERVED: "Its funds stay reserved, but it cannot be verified while the account is inactive. Return it to choose another account, cancel it, or wait for the account to be reactivated.",
+  VERIFIED: "Its funds stay reserved, but it cannot be authenticated while the account is inactive. Return it to choose another account, reject it, or wait for the account to be reactivated.",
+  AUTHENTICATED: "It was debited in the system before the account was deactivated. Do not send it from this account; how it was sent cannot be recorded until the account is reactivated. A Finance Manager should decide what happens to it.",
+  DRAFT: "It cannot be submitted or scheduled while the account is inactive. Choose another account.",
+};
 /** Where an account's money is: its bank and last four digits, its wallet phone, or plain cash. */
 export const accountPlace = (a: { account_kind?: string; bank_name?: string | null; account_last4?: string | null; wallet_phone?: string | null }) =>
   a.account_kind === "CASH" ? "Cash" : a.account_kind === "WALLET" ? `Telebirr ${a.wallet_phone}` : `${a.bank_name} ••••${a.account_last4}`;

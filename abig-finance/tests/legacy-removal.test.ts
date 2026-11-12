@@ -35,7 +35,11 @@ describe("a fresh installation", () => {
   it("the migration is in the normal sequence and nothing is left outside it", () => {
     const dirs = require("node:fs").readdirSync(join(__dirname, "../prisma/migrations")) as string[];
     expect(dirs).toContain(MIGRATION);
-    expect(dirs.filter((d) => d > MIGRATION)).toEqual([]);   // it is the last migration
+    // Later migrations may follow, but none of them names a removed table, function, trigger or type (SQL names ignore case). The test above,
+    // on a fresh installation with every migration applied, is what proves none of them exists again.
+    const removed = [...LEGACY, ...FUNCTIONS, "account_access_release", "cash_position"];
+    const later = dirs.filter((d) => d > MIGRATION && !d.endsWith(".toml")).map((d) => [d, readFileSync(join(__dirname, "../prisma/migrations", d, "migration.sql"), "utf8")] as const);
+    expect(later.flatMap(([d, sql]) => removed.filter((n) => new RegExp(`\\b${n}\\b`, "i").test(sql)).map((n) => `${d}: ${n}`))).toEqual([]);
     expect(require("node:fs").existsSync(join(__dirname, "../ops/pending/remove-legacy-engine.sql"))).toBe(false);
   });
 });
@@ -97,7 +101,7 @@ describe("the migration's own safety checks", () => {
       await d.migrateRest();
       expect(await tableCount(d.owner, LEGACY)).toBe(0);
     } finally { await d.owner.end(); }
-  });
+  }, 30_000);   // builds and migrates a whole database inside the test: about 6.5s, past the 5s default
   it("refuses if an unexpected function still uses a legacy table", async () => {
     const d = await setupDb("abig_test_legacy_guard2", { before: MIGRATION });
     try {
@@ -105,5 +109,5 @@ describe("the migration's own safety checks", () => {
       await expect(d.migrateRest()).rejects.toThrow(/unexpected functions still use the legacy tables: still_uses_old\(\)/);
       expect(await tableCount(d.owner, LEGACY)).toBe(6);
     } finally { await d.owner.end(); }
-  });
+  }, 30_000);   // builds and migrates a whole database inside the test: about 6.5s, past the 5s default
 });

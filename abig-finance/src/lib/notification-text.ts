@@ -25,6 +25,8 @@ const SUBJECTS: Record<string, (e: OutboxEvent) => string> = {
   PERSON_DETAILS_PENDING: (e) => `${e.payload.person_name}: new payment details are waiting for verification`,
   ACCOUNT_ACCESS_GRANTED: (e) => `${e.payload.company_name} can now use the account ${e.payload.account_label}`,
   ACCOUNT_ACCESS_WITHDRAWN: (e) => `${e.payload.company_name} can no longer use the account ${e.payload.account_label}`,
+  ACCOUNT_DEACTIVATED: (e) => `${e.payload.account_label} was deactivated`,
+  ACCOUNT_REACTIVATED: (e) => `${e.payload.account_label} was reactivated`,
   USER_LOCKED: () => "Your ABIG Finance account is locked after repeated failed sign-ins",
   PASSWORD_RESET_COMPLETED: () => "Your ABIG Finance password was changed",
 };
@@ -36,6 +38,8 @@ const NOTES: Record<string, string[]> = {
   USER_LOCKED: ["It unlocks by itself after a few minutes. If it was not you trying to sign in, tell a system administrator."],
   PASSWORD_RESET_COMPLETED: ["You replaced the temporary password an administrator gave you. If this was not you, tell a system administrator now."],
   ACCOUNT_OPENING_OVERDUE: ["Balance checks on this account are refused until the week's opening balance is entered."],
+  ACCOUNT_DEACTIVATED: ["No new payment request, reservation, approval or scheduled submission can use it. Requests that already hold or used funds on it were left as they were: nothing was cancelled or released. Review them on the account and decide what happens to each."],
+  ACCOUNT_REACTIVATED: ["It can be used again. Nothing waiting on it was submitted, approved, released or rescheduled automatically; scheduled requests that were waiting on it must be scheduled again."],
 };
 export function compose(e: OutboxEvent, appUrl: string): { subject: string; text: string } {
   const subject = (SUBJECTS[e.event_type] ?? (() => `Update on ${e.payload.request_no}`))(e);

@@ -16,7 +16,7 @@ import { StatusTracker } from "@/components/ui/status-tracker";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { Timeline } from "@/components/ui/timeline";
 import { withUser } from "@/lib/db";
-import { dstr, dtime, etb, PAYMENT_METHODS } from "@/lib/format";
+import { DEACTIVATION_REASONS, dstr, dtime, etb, INACTIVE_ACCOUNT_NOTE, PAYMENT_METHODS } from "@/lib/format";
 import { maskId, revealIdNumber } from "@/lib/payees";
 import { requireAccess } from "@/lib/rbac";
 import { loadRequest, requestActions, requestHistory, stopReason } from "@/lib/requests";
@@ -94,6 +94,11 @@ export default async function RequestDetail({ params, searchParams }: { params: 
         <div role="alert" className="note mb-3">
           <b>The amount is an estimate</b> from a recurring payment. Check it, correct it if needed by editing the draft, then confirm it. It cannot be submitted or scheduled until it is confirmed.
           {mine && r.workflow_state === "DRAFT" && <div className="mt-2"><ConfirmDialog title={`Confirm ${etb(r.total_amount)}?`} description="This confirms the amount for this request. You can still change the draft before you submit it." confirmLabel="Confirm the amount" cancelLabel="Not yet" action={confirmRequestAmount} fields={{ id }} trigger={<Button size="sm">Confirm the amount</Button>} /></div>}
+        </div>
+      )}
+      {r.debit_active === false && INACTIVE_ACCOUNT_NOTE[r.workflow_state] && (
+        <div role="alert" className="note bad mb-3">
+          <b>The debit account {r.debit_label} is inactive</b>{r.debit_deactivated_at ? ` since ${dtime(r.debit_deactivated_at)}` : ""}{r.debit_deactivation_reason ? ` (${DEACTIVATION_REASONS[r.debit_deactivation_reason] ?? r.debit_deactivation_reason})` : ""}. {INACTIVE_ACCOUNT_NOTE[r.workflow_state]}
         </div>
       )}
       {r.workflow_state === "SCHEDULED" && (
