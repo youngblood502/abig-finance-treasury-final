@@ -5,12 +5,22 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
 import { ADMIN_URL, actAs, authorized, fn, mk, rows, user } from "./helpers";
 import { hashPassword } from "../ops/hash.mjs";
+import { assertTestDbName } from "../ops/test-db-safety.mjs";
 import { verifyPassword } from "../src/lib/crypto";
 
 const root = join(__dirname, "..");
-const DB = "abig_test_ops"; const url = (db: string) => { const u = new URL(ADMIN_URL); u.pathname = "/" + db; return u.toString(); };
+const DB = assertTestDbName("abig_test_ops"); const url = (db: string) => { const u = new URL(ADMIN_URL); u.pathname = "/" + assertTestDbName(db); return u.toString(); };
 let admin: Client; let owner: Client;
-const run = (script: string, ...args: string[]) => spawnSync("node", [join(root, "ops", script), ...args], { env: { ...process.env, MIGRATION_DATABASE_URL: url(DB) }, encoding: "utf8" });
+/**
+ * The only environment the ops scripts get: what Node needs to start on this system, and the test database. Nothing is inherited, so no development
+ * or production database URL or password can reach a script.
+ */
+const childEnv = (extra: Record<string, string> = {}) => {
+  const base: Record<string, string> = {};
+  for (const [k, v] of Object.entries(process.env)) if (v !== undefined && ["PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "HOME", "USERPROFILE"].includes(k.toUpperCase())) base[k] = v;
+  return { ...base, MIGRATION_DATABASE_URL: url(DB), ...extra };
+};
+const run = (script: string, ...args: string[]) => spawnSync("node", [join(root, "ops", script), ...args], { env: childEnv(), encoding: "utf8" });
 
 beforeAll(async () => {
   admin = new Client({ connectionString: ADMIN_URL }); await admin.connect();
@@ -27,8 +37,8 @@ describe("migration runner", () => {
   });
   it("can set the application roles' passwords, and refuses weak ones", async () => {
     const o = new Client({ connectionString: url(DB) }); await o.connect();
-    const weak = spawnSync("node", [join(root, "ops", "migrate.mjs")], { env: { ...process.env, MIGRATION_DATABASE_URL: url(DB), APP_DB_PASSWORD: "short" }, encoding: "utf8" }); expect(weak.status).toBe(1);
-    const good = spawnSync("node", [join(root, "ops", "migrate.mjs")], { env: { ...process.env, MIGRATION_DATABASE_URL: url(DB), APP_DB_PASSWORD: "a-long-random-password-1", AUTH_DB_PASSWORD: "o'quote\"tricky-password-2", WORKER_DB_PASSWORD: "a-long-random-password-3" }, encoding: "utf8" });
+    const weak = spawnSync("node", [join(root, "ops", "migrate.mjs")], { env: childEnv({ APP_DB_PASSWORD: "short" }), encoding: "utf8" }); expect(weak.status).toBe(1);
+    const good = spawnSync("node", [join(root, "ops", "migrate.mjs")], { env: childEnv({ APP_DB_PASSWORD: "a-long-random-password-1", AUTH_DB_PASSWORD: "o'quote\"tricky-password-2", WORKER_DB_PASSWORD: "a-long-random-password-3" }), encoding: "utf8" });
     expect(good.status).toBe(0); expect(good.stdout).toContain("login enabled for abig_auth");
     expect((await o.query("SELECT rolname FROM pg_roles WHERE rolname IN ('abig_app','abig_auth','abig_worker') AND rolcanlogin ORDER BY 1")).rows.map((r) => r.rolname)).toEqual(["abig_app", "abig_auth", "abig_worker"]);
     await o.end();

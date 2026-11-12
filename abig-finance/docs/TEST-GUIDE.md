@@ -60,3 +60,30 @@ Enter a bank reference twice; submit a request whose installments do not add up;
 
 ## Reporting what you find
 For each problem write: who you were signed in as, the page, what you did, what you expected, what happened (a screenshot helps). Money-related surprises first.
+
+## Automated tests: the isolated test server
+`npm test` runs only on its own disposable PostgreSQL 18 server, never on the server that holds `abig_treasury` or any other development or production database.
+
+| | |
+|---|---|
+| Port | `55432`, listening on `127.0.0.1` only |
+| Superuser | `abig_test_admin`, with a password generated at init into `.env.test` (git-ignored) |
+| Data directory | `%LOCALAPPDATA%\abig-fms\test-pg` on Windows (`~/.local/share/abig-fms/test-pg` elsewhere), outside the repository. Set `TEST_PG_DATA` to change it. |
+| Log | `test-pg.log` next to the data directory |
+| Programs | PostgreSQL 18's `initdb` and `pg_ctl`, from `C:\Program Files\PostgreSQL\18\bin` by default. Set `PG_BIN` to change it. |
+
+It is not a Windows service: it runs under your account while started, and nothing changes the PostgreSQL service you already have.
+
+**Commands**
+- `npm run testdb:init`: once. Creates the data directory, the superuser and its password, the identity marker and `.env.test`. Refuses if the directory is not empty.
+- `npm run testdb:start`: before testing. Waits until it accepts connections, then runs the safety checks.
+- `npm test`: the whole suite. Test files run one at a time, because they share the test server's roles.
+- `npm run testdb:status`: shows whether it runs, its identity, port, user and databases, and whether every safety check passes.
+- `npm run testdb:stop`: when you are done.
+- `npm run testdb:reset`: stops it, deletes its data directory (only if it carries the `ABIG_TEST_CLUSTER` marker) and creates and starts a fresh one with a new password.
+
+**Safety checks before every run** (`tests/global-setup.ts`, using `ops/test-db-safety.mjs`). Any failure stops the run; no other server is tried.
+1. Every development or production database variable (`DATABASE_URL`, `AUTH_DATABASE_URL`, `WORKER_DATABASE_URL`, `MIGRATION_DATABASE_URL`, the `*_DB_PASSWORD` values, `POSTGRES_PASSWORD`) and every libpq default (`PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, ...) is removed from the test process. `.env` is never read.
+2. `TEST_ADMIN_URL` comes from `.env.test` only, overriding anything in the shell, and must be `abig_test_admin` at `127.0.0.1:55432/postgres`. There is no fallback.
+3. One connection proves it is the test server: `abig.instance = 'test'`, port 55432, user `abig_test_admin`, listening on 127.0.0.1 only, PostgreSQL 18, the marker file in its data directory, and no database other than `postgres`, the templates and `abig_test_*`.
+4. Tests create and drop only databases named `abig_test_*` (`^abig_test_[a-z0-9_]+$`), and the ops scripts they start get an explicit environment with nothing inherited.

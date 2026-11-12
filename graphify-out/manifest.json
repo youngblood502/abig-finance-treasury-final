@@ -1,7 +1,7 @@
 {
   ".claude/launch.json": {
-    "mtime": 1794317314.3350236,
-    "seen": 1794317342.9118264,
+    "mtime": 1794318399.7452419,
+    "seen": 1794319064.1005993,
     "ast_hash": "365291044390b8133af572f14d55b0c7",
     "semantic_hash": ""
   },
@@ -72,9 +72,9 @@
     "semantic_hash": ""
   },
   "abig-finance/package.json": {
-    "mtime": 1793886625.7270117,
-    "seen": 1793946796.7595441,
-    "ast_hash": "6cd01b83f3c206d3d97be9915ff17d3e",
+    "mtime": 1794465467.526407,
+    "seen": 1794466372.6821084,
+    "ast_hash": "d75d9d10806fe1418f702efa5b80a633",
     "semantic_hash": ""
   },
   "abig-finance/prisma/demo.sql": {
@@ -168,15 +168,15 @@
     "semantic_hash": ""
   },
   "abig-finance/src/app/accounts/page.tsx": {
-    "mtime": 1794216304.7690785,
-    "seen": 1794217444.825476,
-    "ast_hash": "faba31232415a28939baabe87134bcc5",
+    "mtime": 1794399778.5894437,
+    "seen": 1794401528.9968362,
+    "ast_hash": "aaa2102234e4aeba9cb1d5bef90dc0fc",
     "semantic_hash": ""
   },
   "abig-finance/src/app/actions.ts": {
-    "mtime": 1794291268.550928,
-    "seen": 1794291926.7847035,
-    "ast_hash": "6854ae2a87e506b7a63752122b6ee1d5",
+    "mtime": 1794399403.994577,
+    "seen": 1794401528.9968362,
+    "ast_hash": "7cbe7c46754ae54b9030bb661d808db8",
     "semantic_hash": ""
   },
   "abig-finance/src/app/admin-actions.ts": {
@@ -252,9 +252,9 @@
     "semantic_hash": ""
   },
   "abig-finance/src/app/requests/[id]/page.tsx": {
-    "mtime": 1794290098.7429154,
-    "seen": 1794290779.1857975,
-    "ast_hash": "fd7e2a7036a31d7955c042cc7d94bdbd",
+    "mtime": 1794399557.6568346,
+    "seen": 1794401528.9968362,
+    "ast_hash": "ea133caa71916fff8ce55ebbd46a24c2",
     "semantic_hash": ""
   },
   "abig-finance/src/app/requests/new/form.tsx": {
@@ -318,9 +318,9 @@
     "semantic_hash": ""
   },
   "abig-finance/src/lib/format.ts": {
-    "mtime": 1793953398.8235037,
-    "seen": 1793954726.359162,
-    "ast_hash": "84dc3522cfd9af56eb7c1a6339e19c6a",
+    "mtime": 1794399484.3957398,
+    "seen": 1794401528.9968362,
+    "ast_hash": "ac9c8d5929f829d23f0204c93e99cedc",
     "semantic_hash": ""
   },
   "abig-finance/src/lib/rbac.ts": {
@@ -390,9 +390,9 @@
     "semantic_hash": ""
   },
   "abig-finance/tests/helpers.ts": {
-    "mtime": 1793880404.9395878,
-    "seen": 1793882868.885524,
-    "ast_hash": "3b083ee3df7a4d818cc3b561bec0817f",
+    "mtime": 1794465381.1978931,
+    "seen": 1794466372.6863112,
+    "ast_hash": "bf4f5d6f1c78365c8de7879a6e7c1acc",
     "semantic_hash": ""
   },
   "abig-finance/tests/mail.test.ts": {
@@ -402,10 +402,10 @@
     "semantic_hash": ""
   },
   "abig-finance/tests/ops.test.ts": {
-    "mtime": 1793769131.0,
-    "seen": 1793860867.2881856,
-    "ast_hash": "40fd268e13771b5318d4646eff19875c",
-    "semantic_hash": "40fd268e13771b5318d4646eff19875c"
+    "mtime": 1794465407.9330697,
+    "seen": 1794466372.6863112,
+    "ast_hash": "253ebb7575e8199c544e653caf9f99f4",
+    "semantic_hash": ""
   },
   "abig-finance/tests/phase2.test.ts": {
     "mtime": 1793871239.2524452,
@@ -420,9 +420,9 @@
     "semantic_hash": ""
   },
   "abig-finance/tests/phase6.test.ts": {
-    "mtime": 1794029860.4571738,
-    "seen": 1794030725.6930206,
-    "ast_hash": "79032bdb808f08dc22fe7a981acea32b",
+    "mtime": 1794402064.168189,
+    "seen": 1794403692.5254605,
+    "ast_hash": "7ed375d43e85a6795ed33eb1a7af5f19",
     "semantic_hash": ""
   },
   "abig-finance/tests/rbac.test.ts": {
@@ -467,16 +467,10 @@
     "ast_hash": "9b31786b637be3c13978bec4c2330752",
     "semantic_hash": "9b31786b637be3c13978bec4c2330752"
   },
-  "abig-finance/CLAUDE.md": {
-    "mtime": 1793860156.2716184,
-    "seen": 1793860867.2881856,
-    "ast_hash": "67d88e9d0760c3ba54c75dfd9551c1c5",
-    "semantic_hash": "67d88e9d0760c3ba54c75dfd9551c1c5"
-  },
   "abig-finance/README.md": {
-    "mtime": 1793885339.8354075,
-    "seen": 1793885355.5148833,
-    "ast_hash": "e65461026c6fd4a06be1d50ba24b38d4",
+    "mtime": 1794465488.175387,
+    "seen": 1794466372.686826,
+    "ast_hash": "c7bdea651bba874d2f3000c5610001e2",
     "semantic_hash": ""
   },
   "abig-finance/docs/OPERATIONS.md": {
@@ -486,9 +480,9 @@
     "semantic_hash": ""
   },
   "abig-finance/docs/TEST-GUIDE.md": {
-    "mtime": 1793885339.7626698,
-    "seen": 1793885355.5148833,
-    "ast_hash": "fbc342d3a8c2a8a499686a4fbca96df8",
+    "mtime": 1794465515.7356126,
+    "seen": 1794466372.686826,
+    "ast_hash": "9aaf4b29ffb947051b25aaa976d70b97",
     "semantic_hash": ""
   },
   "abig-finance/docs/TREASURY-REFACTOR.md": {
@@ -798,9 +792,9 @@
     "semantic_hash": ""
   },
   "abig-finance/vitest.config.ts": {
-    "mtime": 1794298944.6480682,
-    "seen": 1794309277.748355,
-    "ast_hash": "7003d9062d9bb41df311f1290cb1aaa7",
+    "mtime": 1794465369.68445,
+    "seen": 1794466372.686826,
+    "ast_hash": "685748a4df0870d266a24fbf144e0ba9",
     "semantic_hash": ""
   },
   "abig-finance/prisma/migrations/20261108000000_shared_account_privacy/migration.sql": {
@@ -900,9 +894,9 @@
     "semantic_hash": ""
   },
   "abig-finance/src/lib/requests.ts": {
-    "mtime": 1794290098.7429154,
-    "seen": 1794290779.1857975,
-    "ast_hash": "8e0521b3e93c4290f54f3cd2566d6e65",
+    "mtime": 1794402461.8502483,
+    "seen": 1794403692.5254605,
+    "ast_hash": "381e87e2f27b599f67c41248537048ed",
     "semantic_hash": ""
   },
   "abig-finance/tests/requests.test.ts": {
@@ -924,9 +918,9 @@
     "semantic_hash": ""
   },
   "abig-finance/src/lib/treasury-screens.ts": {
-    "mtime": 1794216304.7690785,
-    "seen": 1794217444.826478,
-    "ast_hash": "fc486a72a988ac7a51433eb74e64e171",
+    "mtime": 1794402461.8502483,
+    "seen": 1794403692.5254605,
+    "ast_hash": "bdb8b58805917db5dca467eea1e33d37",
     "semantic_hash": ""
   },
   "abig-finance/tests/treasury-screens.test.ts": {
@@ -972,9 +966,9 @@
     "semantic_hash": ""
   },
   "abig-finance/src/components/accounts/account-panel.tsx": {
-    "mtime": 1794218095.9036071,
-    "seen": 1794218424.590227,
-    "ast_hash": "32078c4ace8d7c22d69dac6a615079e2",
+    "mtime": 1794399769.4974558,
+    "seen": 1794401528.9968362,
+    "ast_hash": "56f7bd69057c78887ce11cb3fce62741",
     "semantic_hash": ""
   },
   "abig-finance/src/components/accounts/register-account-form.tsx": {
@@ -1050,9 +1044,9 @@
     "semantic_hash": ""
   },
   "abig-finance/tests/access-withdrawal-race.test.ts": {
-    "mtime": 1794033451.1125512,
-    "seen": 1794034319.5021944,
-    "ast_hash": "b798ffa57011ab8df49b00457061f306",
+    "mtime": 1794402461.8572493,
+    "seen": 1794403692.5254605,
+    "ast_hash": "94d984ea18e779322121ea8b6275ccf0",
     "semantic_hash": ""
   },
   "abig-finance/src/app/admin/people/[id]/page.tsx": {
@@ -1074,9 +1068,9 @@
     "semantic_hash": ""
   },
   "abig-finance/src/lib/admin.ts": {
-    "mtime": 1794228211.6536398,
-    "seen": 1794228333.7702572,
-    "ast_hash": "144db64968ccf52f8395f42fee020801",
+    "mtime": 1794402461.8502483,
+    "seen": 1794403692.5254605,
+    "ast_hash": "e5f6f6d42e10eb6cc30300cc8aa0a4ef",
     "semantic_hash": ""
   },
   "abig-finance/tests/reports-admin.test.ts": {
@@ -1248,9 +1242,9 @@
     "semantic_hash": ""
   },
   "abig-finance/src/lib/notification-text.ts": {
-    "mtime": 1794291191.3793657,
-    "seen": 1794291926.7857122,
-    "ast_hash": "3d1c949b0d6c4b9612ba484c8f2d2d6f",
+    "mtime": 1794402461.8502483,
+    "seen": 1794403692.5254605,
+    "ast_hash": "8984b66ff86b14900bda67342de2407f",
     "semantic_hash": ""
   },
   "abig-finance/src/lib/notifications.ts": {
@@ -1290,9 +1284,9 @@
     "semantic_hash": ""
   },
   "abig-finance/tests/legacy-removal.test.ts": {
-    "mtime": 1794294764.8730025,
-    "seen": 1794295201.0046985,
-    "ast_hash": "def7ac7055a84b07a26ada8c19d2c7a9",
+    "mtime": 1794402461.8601172,
+    "seen": 1794403692.5254605,
+    "ast_hash": "e8e159b541935dafd85bcd1c5bfa28cf",
     "semantic_hash": ""
   },
   "abig-finance/src/components/ui/export-button.tsx": {
@@ -1308,9 +1302,9 @@
     "semantic_hash": ""
   },
   "abig-finance/src/lib/submit-lock.ts": {
-    "mtime": 1794311559.1718333,
-    "seen": 1794317342.9118264,
-    "ast_hash": "47a0a9b2e2b25d0ff4a795ca9970394f",
+    "mtime": 1794318304.6800144,
+    "seen": 1794319064.116224,
+    "ast_hash": "bf8f89bcda3d877c1a96577eb7a9ca98",
     "semantic_hash": ""
   },
   "abig-finance/tests/duplicate-actions.test.ts": {
@@ -1320,9 +1314,9 @@
     "semantic_hash": ""
   },
   "abig-finance/tests/loading-states.test.ts": {
-    "mtime": 1794311581.0068378,
-    "seen": 1794317342.9118264,
-    "ast_hash": "d2670fc38e681ff046d582c11e196f1c",
+    "mtime": 1794318236.1293044,
+    "seen": 1794319064.116224,
+    "ast_hash": "ef4de50df3b41009578fe62fe684e7b1",
     "semantic_hash": ""
   },
   "abig-finance/src/app/admin/people/[id]/loading.tsx": {
@@ -1389,6 +1383,54 @@
     "mtime": 1794315757.2049758,
     "seen": 1794317342.9118264,
     "ast_hash": "81ab8ebf6cbae7d2c549066584944cf1",
+    "semantic_hash": ""
+  },
+  "abig-finance/prisma/migrations/20261111000000_account_activation/migration.sql": {
+    "mtime": 1794402461.8601172,
+    "seen": 1794403692.5254605,
+    "ast_hash": "e46bb4a2e7406a17462a42542f229451",
+    "semantic_hash": ""
+  },
+  "abig-finance/src/components/accounts/account-status.tsx": {
+    "mtime": 1794399704.7340236,
+    "seen": 1794401528.9968362,
+    "ast_hash": "1443c6b7d68d67008a16c3b39b50e535",
+    "semantic_hash": ""
+  },
+  "abig-finance/tests/account-activation.test.ts": {
+    "mtime": 1794402461.8601172,
+    "seen": 1794403692.5254605,
+    "ast_hash": "79cbd892e53969a5cba8e3750e3da07e",
+    "semantic_hash": ""
+  },
+  "abig-finance/ops/test-db-safety.mjs": {
+    "mtime": 1794465258.2947142,
+    "seen": 1794466372.6821084,
+    "ast_hash": "660483ae254e81ff67eea593268b952e",
+    "semantic_hash": ""
+  },
+  "abig-finance/ops/test-db.mjs": {
+    "mtime": 1794465312.2203898,
+    "seen": 1794466372.6821084,
+    "ast_hash": "07593a77e437d390b5ff39b50577a034",
+    "semantic_hash": ""
+  },
+  "abig-finance/tests/global-setup.ts": {
+    "mtime": 1794465340.587782,
+    "seen": 1794466372.6863112,
+    "ast_hash": "48b1e9c708c49eb739ba6751d001c6ef",
+    "semantic_hash": ""
+  },
+  "abig-finance/tests/setup-env.ts": {
+    "mtime": 1794465346.765244,
+    "seen": 1794466372.686826,
+    "ast_hash": "c872c4845e7abdcc788f1bfc73084cbc",
+    "semantic_hash": ""
+  },
+  "abig-finance/tests/test-isolation.test.ts": {
+    "mtime": 1794465439.8137739,
+    "seen": 1794466372.686826,
+    "ast_hash": "bfbd0906c8e76a9c33a0f31127000aa9",
     "semantic_hash": ""
   },
   "abig-finance/package-lock.json": {
