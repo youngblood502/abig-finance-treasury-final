@@ -71,11 +71,19 @@ export interface AccountRow {
   id: string; account_label: string; account_kind: string; wallet_phone: string | null; bank_name: string | null; account_last4: string | null; number_state: NumberState; min_buffer: string; large_deposit_threshold: string; is_active: boolean;
   current_balance: string; reserved_balance: string; available_balance: string; shortfall_amount: string; balance_updated_at: Date | null; owner_company_id: string | null; owner: string | null;
   can_update: boolean; can_manage: boolean; access: AccessLevel; users: AccountUser[]; history: (LogRow & { account_id: string })[];
+  /** Set while the account is inactive. An account made inactive before reasons were recorded has none. */
+  deactivated_at: Date | null; deactivation_reason: string | null; deactivation_note: string | null;
+  /** What is outstanding on the account that this person may see; listed when it is inactive. */
+  commitments: AccountCommitment[];
+  /** Every change of status, newest first, with who made it. */
+  statusHistory: AccountStatusEvent[];
 }
+export interface AccountCommitment { account_id: string; kind: "REQUEST" | "RECURRING" | "RECONCILIATION"; item_id: string; label: string; company: string | null; state: string; amount: string | null; on_date: string | null }
+export interface AccountStatusEvent { account_id: string; id: string; action: "DEACTIVATED" | "REACTIVATED"; reason: string | null; note: string | null; actor_name: string; occurred_at: Date }
 /** The accounts screen: every account with who shares it and its recent log, read in one pass rather than account by account. */
 export const accountList = async (tx: Tx, company: string | null) => {
-  const accounts = await tx.q<Omit<AccountRow, "users" | "history">>(
-    `SELECT a.id, a.account_label, a.account_kind::text AS account_kind, a.wallet_phone, b.name AS bank_name, a.account_last4, account_number_state(a.id) AS number_state, a.min_buffer, a.large_deposit_threshold, a.is_active,
+  const accounts = await tx.q<Omit<AccountRow, "users" | "history" | "commitments" | "statusHistory">>(
+    `SELECT a.id, a.account_label, a.account_kind::text AS account_kind, a.wallet_phone, b.name AS bank_name, a.account_last4, account_number_state(a.id) AS number_state, a.min_buffer, a.large_deposit_threshold, a.is_active, a.deactivated_at, a.deactivation_reason::text AS deactivation_reason, a.deactivation_note,
             a.current_balance, a.reserved_balance, a.available_balance, a.shortfall_amount, a.balance_updated_at, o.id AS owner_company_id, o.legal_name AS owner,
             app_can_snapshot(a.id) AS can_update, app_can_manage_access(a.id) AS can_manage, app_account_access(a.id) AS access
        FROM company_bank_accounts a LEFT JOIN banks b ON b.id = a.bank_id LEFT JOIN companies o ON o.id = account_owner_company(a.id)
@@ -83,7 +91,13 @@ export const accountList = async (tx: Tx, company: string | null) => {
   const ids = accounts.map((a) => a.id);
   const users = await tx.q<AccountUser>("SELECT g.id, g.account_id, g.company_id, c.legal_name AS name, g.is_owner, g.permissions FROM company_bank_account_access g JOIN companies c ON c.id = g.company_id WHERE g.account_id = ANY($1::uuid[]) AND g.revoked_at IS NULL ORDER BY g.is_owner DESC, c.legal_name", [ids]);
   const history = await tx.q<LogRow & { account_id: string }>("SELECT a.id AS account_id, h.id, h.updated_at, h.previous_balance, h.new_balance, CASE WHEN h.request_no IS NULL OR app_account_access(a.id) <> 'NONE' OR EXISTS (SELECT 1 FROM payment_requests r WHERE r.request_no = h.request_no AND r.debtor_company_id IN (SELECT app_member_companies())) THEN h.updated_by_name END AS updated_by_name, h.request_no, h.entry_kind, h.bank_figure, h.outstanding_total, h.implied_deposit, h.anomalies FROM unnest($1::uuid[]) a(id) CROSS JOIN LATERAL account_balance_history(a.id, 25) h", [ids]);
-  return accounts.map((a): AccountRow => ({ ...a, users: users.filter((u) => u.account_id === a.id), history: history.filter((h) => h.account_id === a.id) }));
+  // Both read through functions that apply the person's own visibility: other companies' items only where the person may see all of the account's payments.
+  const commitments = await tx.q<AccountCommitment>("SELECT a.id AS account_id, c.kind, c.item_id, c.label, c.company, c.state, c.amount, c.on_date::text AS on_date FROM unnest($1::uuid[]) a(id) CROSS JOIN LATERAL account_commitments(a.id) c", [ids]);
+  const statusHistory = await tx.q<AccountStatusEvent>("SELECT a.id AS account_id, h.id, h.action, h.reason, h.note, h.actor_name, h.occurred_at FROM unnest($1::uuid[]) a(id) CROSS JOIN LATERAL account_status_history(a.id) h", [ids]);
+  return accounts.map((a): AccountRow => ({
+    ...a, users: users.filter((u) => u.account_id === a.id), history: history.filter((h) => h.account_id === a.id),
+    commitments: commitments.filter((x) => x.account_id === a.id), statusHistory: statusHistory.filter((x) => x.account_id === a.id),
+  }));
 };
 
 /** How a payment starts on the balance check. Someone took this tick back on purpose, so it stays off until a person ticks it again. */

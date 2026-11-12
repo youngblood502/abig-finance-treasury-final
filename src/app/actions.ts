@@ -320,6 +320,16 @@ export async function setAccountNumber(f: FormData) {
     return tx.q("SELECT set_account_number($1,$2,$3,$4)", [str(f, "account"), n.last4, n.enc, str(f, "replace_last4") === "on"]);
   }))));
 }
+/** Takes an account out of use at once, whatever is outstanding on it. Nothing on it is changed or released; the database records why and who. */
+export async function deactivateAccount(f: FormData) {
+  return act("/accounts", "Account deactivated. Nothing new can use it; anything still outstanding on it is listed on the account.", guard(["bank_account:manage"], (uid) => dbl(withUser(uid, (tx) =>
+    tx.q("SELECT deactivate_account($1,$2,$3)", [str(f, "account"), str(f, "reason"), str(f, "note") || null])))));
+}
+/** Puts an inactive account back in use once the owner confirms it was restored. Nothing waiting on it is submitted, approved or released. */
+export async function reactivateAccount(f: FormData) {
+  return act("/accounts", "Account reactivated. Requests waiting on it were left as they were.", guard(["bank_account:manage"], (uid) => dbl(withUser(uid, (tx) =>
+    tx.q("SELECT reactivate_account($1,$2,$3)", [str(f, "account"), str(f, "restored") === "on", str(f, "note") || null])))));
+}
 export async function setAccountPolicy(f: FormData) {
   return act("/accounts", "Account policy saved.", guard(["bank_account:manage"], (uid) => dbl(withUser(uid, (tx) => tx.q("SELECT set_account_policy($1,$2)", [str(f, "account"), Number(str(f, "buffer") || 0)])))));
 }
