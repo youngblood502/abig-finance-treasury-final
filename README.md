@@ -7,7 +7,7 @@ so the screens, the API and any future tool all obey them.
 
 ## Run it
 See `docs/TEST-GUIDE.md` for a step-by-step local setup with demo data, and `docs/OPERATIONS.md` for deployment, backups and upgrades.
-Short version: `npm install`, set `.env` (see `.env.example`), `npm run migrate`, `npm run db:seed`, `npm run db:demo`, `npm run demo:passwords`, `npm run dev`. `npm test` runs the database and unit tests (needs a superuser connection in TEST_ADMIN_URL).
+Short version: `npm install`, set `.env` (see `.env.example`), `npm run migrate`, `npm run db:seed`, `npm run db:demo`, `npm run demo:passwords`, `npm run dev`. `npm test` runs the database and unit tests on their own disposable PostgreSQL server: run `npm run testdb:init` once and `npm run testdb:start` before testing (see docs/TEST-GUIDE.md, "Automated tests").
 
 ## The screens
 Dashboard (consolidated current, reserved and available balances), Payment requests (list, new, detail with history), Approvals, Accounts (bank, Telebirr wallet, cash), Suppliers, People, Reports, Administration. A person sees only what their roles allow (`src/lib/rbac.ts`); the database enforces the same rules even if a form is forged.

@@ -1,13 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
-import { actAs, ASKU, fails, fn, mk, rows, S_ETHIO, S_HAWASSA, setupDb, user } from "./helpers";
+import { actAs, ASKU, fails, fn, mk, rows, S_ETHIO, S_HAWASSA, setupDb, urlFor, user } from "./helpers";
 
 let owner: Client; let as: Awaited<ReturnType<typeof setupDb>>["as"];
 beforeAll(async () => { const d = await setupDb("abig_test_p6"); owner = d.owner; as = d.as; await owner.query("ALTER ROLE abig_auth LOGIN PASSWORD 'auth'"); });
 afterAll(async () => { await owner?.end(); });
 /** A request that holds reserved funds (RESERVED), so its supplier cannot be changed. */
 const submittedReq = async (c: Client) => { await actAs(c, user.meron); const id = await mk(c, user.meron, { amounts: [1000] }); await fn(c, "wf_submit", id); return id; };
-const authClient = async () => { const c = new Client({ host: "127.0.0.1", user: "abig_auth", password: "auth", database: "abig_test_p6" }); await c.connect(); return c; };
+// The same server as every other test (TEST_ADMIN_URL), not a hard-coded host and default port.
+const authClient = async () => { const c = new Client({ connectionString: urlFor("abig_test_p6", ["abig_auth", "auth"]) }); await c.connect(); return c; };
 
 describe("sign-in storage", () => {
   it("only the auth role can read credentials; the app role cannot read hashes, secrets, sessions", async () => {

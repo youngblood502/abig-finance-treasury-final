@@ -133,5 +133,5 @@ describe("a reservation against a withdrawal of access", () => {
       await noStranded(account);
     }
     expect(outcomes.reserved + outcomes.withdrawn).toBe(12);
-  });
+  }, 30_000);   // many committed races in a row: about 12s on the test server, past the 5s default
 });

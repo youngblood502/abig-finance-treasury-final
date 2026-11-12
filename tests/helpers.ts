@@ -2,7 +2,10 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Client } from "pg";
 
-export const ADMIN_URL = process.env.TEST_ADMIN_URL ?? "postgres://postgres:pw@127.0.0.1:5432/postgres";
+import { assertTestDbName, assertTestServerUrl } from "../ops/test-db-safety.mjs";
+
+/** The isolated test server's superuser connection, set by tests/global-setup.ts from .env.test. There is no fallback: without it, every test stops here. */
+export const ADMIN_URL = assertTestServerUrl(process.env.TEST_ADMIN_URL).toString();
 const root = join(__dirname, "..");
 const U = (n: number) => `a0000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 export const user = { admin: U(1), meron: U(2), lidya: U(3), hana: U(4), tigist: U(5), samuel: U(6), abebe: U(7), bereket: U(8), selam: U(9), dawit: U(10), kebede: U(11), yared: U(12), nardos: U(13), fikru: U(14) };
@@ -13,13 +16,15 @@ export const CBE = "b0000000-0000-4000-8000-000000000001", AWASH = "b0000000-000
 export const S_ETHIO_ID = "d0000000-0000-4000-8000-000000000002", BD_ETHIO = "e0000000-0000-4000-8000-000000000002";
 export const BD_HAWASSA = "e0000000-0000-4000-8000-000000000001", BD_ADDIS = "e0000000-0000-4000-8000-000000000003";
 
-const urlFor = (db: string, login?: [string, string]) => { const u = new URL(ADMIN_URL); u.pathname = `/${db}`; if (login) { u.username = login[0]; u.password = login[1]; } return u.toString(); };
+/** A connection URL on the test server (TEST_ADMIN_URL's host and port) for one scratch database, optionally as another login. */
+export const urlFor = (db: string, login?: [string, string]) => { assertTestDbName(db); const u = new URL(ADMIN_URL); u.pathname = `/${db}`; if (login) { u.username = login[0]; u.password = login[1]; } return u.toString(); };
 
 /**
  * Creates a scratch database, applies the migrations in order, then the seed. Returns the owner connection and an `as` helper.
  * With `before`, migrations from that name on are held back until `migrateRest()`, to test how existing data moves forward.
  */
 export async function setupDb(db: string, { before }: { before?: string } = {}) {
+  assertTestDbName(db);   // only abig_test_* is ever dropped or created
   const admin = new Client({ connectionString: ADMIN_URL }); await admin.connect();
   await admin.query(`DROP DATABASE IF EXISTS ${db}`); await admin.query(`CREATE DATABASE ${db}`); await admin.end();
   const owner = new Client({ connectionString: urlFor(db) }); await owner.connect();
