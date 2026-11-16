@@ -1,0 +1,15 @@
+{
+  "name": "abig-finance-treasury",
+  "private": true,
+  "description": "Repo root. The app lives in abig-finance/; these scripts forward to it so npm commands work from here too.",
+  "scripts": {
+    "dev": "npm --prefix abig-finance run dev",
+    "build": "npm --prefix abig-finance run build",
+    "start": "npm --prefix abig-finance run start",
+    "worker": "npm --prefix abig-finance run worker",
+    "typecheck": "npm --prefix abig-finance run typecheck",
+    "test": "npm --prefix abig-finance run test",
+    "migrate": "npm --prefix abig-finance run migrate",
+    "install:app": "npm --prefix abig-finance install"
+  }
+}
