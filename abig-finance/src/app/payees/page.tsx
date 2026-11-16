@@ -25,7 +25,7 @@ function PersonPanel({ p, userId, canManage, canVerify }: { p: PersonRow; userId
   return (
     <SidePanel title={p.full_name} description={p.company} trigger={<Button variant="outline" size="sm">Details</Button>}>
       <dl className="m-0 mt-3">
-        <Line label="Phone" value={p.phone} /><Line label="ID number" value={maskId(p.id_last4)} /><Line label="Usually paid by" value={PAYMENT_METHODS[p.preferred_method]} /><Line label="Can be paid by" value={<MethodList methods={readyMethods(p.versions)} />} />
+        <Line label="Phone" value={p.phone ?? "None"} /><Line label="ID number" value={maskId(p.id_last4)} /><Line label="Usually paid by" value={PAYMENT_METHODS[p.preferred_method]} /><Line label="Can be paid by" value={<MethodList methods={readyMethods(p.versions)} />} />
       </dl>
       <Section title="Bank and Telebirr details">
         <VersionList userId={userId} canVerify={canVerify} verify={verifyPersonDetail} reject={rejectPersonDetail} versions={p.versions.map((v) => ({ ...v, label: versionLabel(v), display: v.kind === "BANK" ? <>{v.bank_name} <AccountNumber kind="person" id={v.id} last4={v.account_last4} state={v.number_state} /></> : undefined }))} />
@@ -35,7 +35,7 @@ function PersonPanel({ p, userId, canManage, canVerify }: { p: PersonRow; userId
       {canManage && (
         <Section title="Correct name, phone, ID number or status">
           <form action={updatePerson} className="flex flex-col gap-3"><input type="hidden" name="id" value={p.id} /><input type="hidden" name="company" value={p.company_id} />
-            <label className="f">Full name<input name="name" defaultValue={p.full_name} required /></label><label className="f">Phone<input name="phone" type="tel" defaultValue={p.phone} required /></label>
+            <label className="f">Full name<input name="name" defaultValue={p.full_name} required /></label><label className="f">Phone (optional)<input name="phone" type="tel" defaultValue={p.phone ?? ""} placeholder="0911 234 567" /></label>
             <label className="f">New ID number (leave empty to keep it)<input name="id_number" autoComplete="off" /></label>
             <label className="f">Usually paid by<select name="preferred" defaultValue={p.preferred_method}>{Object.entries(PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="active" defaultChecked={p.is_active} />Active</label>
@@ -53,9 +53,9 @@ export default async function Payees({ searchParams }: { searchParams: Promise<R
   const people = await withUser(uid, (tx) => personList(tx, company));
   const entering = me.memberships.filter((m) => m.permissions.includes("payee:manage")).map((m) => ({ id: m.company_id, name: m.company }));
   const rows: DataRow[] = people.map((p) => ({
-    id: p.id, search: `${p.full_name} ${p.phone} ${p.company}`, filters: listFilters(p.is_active, p.versions.filter((v) => v.status !== "REJECTED")), sort: { name: p.full_name, company: p.company },
+    id: p.id, search: `${p.full_name} ${p.phone ?? ""} ${p.company}`, filters: listFilters(p.is_active, p.versions.filter((v) => v.status !== "REJECTED")), sort: { name: p.full_name, company: p.company },
     cells: {
-      name: <><b>{p.full_name}</b>{!p.is_active && <Badge variant="destructive" className="ml-2">Inactive</Badge>}<span className="block text-xs text-muted-foreground">ID {maskId(p.id_last4)}</span></>, company: p.company, phone: p.phone,
+      name: <><b>{p.full_name}</b>{!p.is_active && <Badge variant="destructive" className="ml-2">Inactive</Badge>}<span className="block text-xs text-muted-foreground">ID {maskId(p.id_last4)}</span></>, company: p.company, phone: p.phone ?? <span className="text-muted-foreground">None</span>,
       ready: <><MethodList methods={readyMethods(p.versions)} />{p.versions.some((v) => v.status === "PENDING") && <Badge variant="warning" className="ml-2">To verify</Badge>}</>,
       open: <PersonPanel p={p} userId={me.id} canManage={hasPermission(me, "payee:manage", p.company_id)} canVerify={hasPermission(me, "payment_request:verify", p.company_id)} />,
     },

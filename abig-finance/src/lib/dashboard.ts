@@ -51,9 +51,9 @@ export const requestCounts = (tx: Tx, company: string | null) => tx.q<StateCount
 export interface QueueRow { request_id: string; request_no: string; stage: string; company: string; payee: string; total_amount: string; waiting_since: Date }
 /** What is waiting for this person. The database decides: never their own request, and never one they handled at the other stage. */
 export const approvalQueue = (tx: Tx, company: string | null) => tx.q<QueueRow>(
-  `SELECT a.request_id, a.request_no, a.stage, c.legal_name AS company, COALESCE(s.legal_name, p.full_name) AS payee, a.total_amount, a.waiting_since
+  `SELECT a.request_id, a.request_no, a.stage, c.legal_name AS company, COALESCE(s.legal_name, p.full_name, ot.full_name) AS payee, a.total_amount, a.waiting_since
      FROM app_actionable_requests() a JOIN payment_requests r ON r.id = a.request_id JOIN companies c ON c.id = a.debtor_company_id
-     LEFT JOIN suppliers s ON s.id = r.supplier_id LEFT JOIN person_payees p ON p.id = r.person_payee_id
+     LEFT JOIN suppliers s ON s.id = r.supplier_id LEFT JOIN person_payees p ON p.id = r.person_payee_id LEFT JOIN one_time_payees ot ON ot.id = r.one_time_payee_id
     WHERE $1::uuid IS NULL OR a.debtor_company_id = $1 ORDER BY a.waiting_since`, [company]);
 
 export interface ReturnedRow { id: string; request_no: string; total_amount: string; reason: string; returned_at: Date }

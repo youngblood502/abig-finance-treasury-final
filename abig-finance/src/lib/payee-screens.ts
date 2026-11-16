@@ -12,7 +12,7 @@ import { PERSON_DETAIL_FOR_METHOD } from "./payees";
 export interface PaymentLine { payee_id: string; id: string; request_no: string; company: string; workflow_state: string; total_amount: string; created_at: Date }
 export interface SupplierVersion { id: string; supplier_id: string; version: number; bank_name: string; account_last4: string; number_state: NumberState; status: string; created_by: string; rejection_reason: string | null }
 export interface SupplierLink { supplier_id: string; company_id: string; company: string; status: string }
-export interface SupplierRow { id: string; legal_name: string; tin: string | null; is_active: boolean; links: SupplierLink[]; versions: SupplierVersion[]; history: PaymentLine[] }
+export interface SupplierRow { id: string; legal_name: string; tin: string | null; phone: string | null; is_active: boolean; links: SupplierLink[]; versions: SupplierVersion[]; history: PaymentLine[] }
 
 const history = (tx: Tx, column: "supplier_id" | "person_payee_id", ids: string[], company: string | null) => tx.q<PaymentLine>(
   `SELECT payee_id, id, request_no, company, workflow_state, total_amount, created_at FROM (
@@ -22,7 +22,7 @@ const history = (tx: Tx, column: "supplier_id" | "person_payee_id", ids: string[
     WHERE n <= 10 ORDER BY created_at DESC, id`, [ids, company]);
 
 export const supplierList = async (tx: Tx, company: string | null) => {
-  const suppliers = await tx.q<Pick<SupplierRow, "id" | "legal_name" | "tin" | "is_active">>("SELECT id, legal_name, tin, is_active FROM suppliers WHERE $1::uuid IS NULL OR id IN (SELECT supplier_id FROM company_suppliers WHERE company_id = $1) ORDER BY legal_name", [company]);
+  const suppliers = await tx.q<Pick<SupplierRow, "id" | "legal_name" | "tin" | "phone" | "is_active">>("SELECT id, legal_name, tin, phone, is_active FROM suppliers WHERE $1::uuid IS NULL OR id IN (SELECT supplier_id FROM company_suppliers WHERE company_id = $1) ORDER BY legal_name", [company]);
   const ids = suppliers.map((s) => s.id);
   const versions = await tx.q<SupplierVersion>("SELECT id, supplier_id, version, bank_name, account_last4, supplier_account_state(id) AS number_state, status, created_by, rejection_reason FROM supplier_bank_details WHERE supplier_id = ANY($1::uuid[]) ORDER BY supplier_id, version DESC", [ids]);
   const links = await tx.q<SupplierLink>("SELECT cs.supplier_id, cs.company_id, c.legal_name AS company, cs.status FROM company_suppliers cs JOIN companies c ON c.id = cs.company_id WHERE cs.supplier_id = ANY($1::uuid[]) ORDER BY c.legal_name", [ids]);
@@ -34,7 +34,7 @@ export const supplierList = async (tx: Tx, company: string | null) => {
 export const canChangeSupplierStatus = async (tx: Tx) => (await tx.q<{ yes: boolean }>("SELECT app_has_role_anywhere('VERIFIER') OR app_has_role_anywhere('FINANCE_MANAGER') AS yes"))[0].yes;
 
 export interface PersonVersion { id: string; person_id: string; version: number; kind: string; bank_name: string | null; account_last4: string | null; number_state: NumberState; telebirr_phone: string | null; status: string; created_by: string; rejection_reason: string | null }
-export interface PersonRow { id: string; company_id: string; company: string; full_name: string; phone: string; id_last4: string; preferred_method: string; is_active: boolean; versions: PersonVersion[]; history: PaymentLine[] }
+export interface PersonRow { id: string; company_id: string; company: string; full_name: string; phone: string | null; id_last4: string; preferred_method: string; is_active: boolean; versions: PersonVersion[]; history: PaymentLine[] }
 
 export const personList = async (tx: Tx, company: string | null) => {
   const people = await tx.q<Omit<PersonRow, "versions" | "history">>(

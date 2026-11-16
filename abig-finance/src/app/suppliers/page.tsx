@@ -14,15 +14,16 @@ import { canChangeSupplierStatus, LIST_FILTERS, listFilters, supplierList, verif
 import { can, canAccess, requireAccess } from "@/lib/rbac";
 import { currentUserId, requireMe } from "@/lib/session";
 
-const COLUMNS: DataColumn[] = [{ key: "name", header: "Supplier", primary: true, sortable: true }, { key: "tin", header: "TIN", sortable: true }, { key: "companies", header: "Your companies" }, { key: "bank", header: "Verified bank details" }, { key: "open", header: "" }];
+const COLUMNS: DataColumn[] = [{ key: "name", header: "Supplier", primary: true, sortable: true }, { key: "tin", header: "TIN", sortable: true }, { key: "phone", header: "Phone" }, { key: "companies", header: "Your companies" }, { key: "bank", header: "Verified bank details" }, { key: "open", header: "" }];
 const NameField = ({ value }: { value?: string }) => <label className="f">Legal name<input name="name" defaultValue={value} required /></label>;
 const TinField = ({ value }: { value?: string | null }) => <label className="f">TIN (optional)<input name="tin" defaultValue={value ?? ""} pattern="[0-9A-Za-z\-]{6,20}" title="6 to 20 letters, digits or hyphens" /></label>;
+const PhoneField = ({ value }: { value?: string | null }) => <label className="f">Phone (optional)<input name="phone" type="tel" defaultValue={value ?? ""} placeholder="0911 234 567 or 011 551 2345" /></label>;
 interface Company { id: string; name: string }
 
 function SupplierPanel({ s, userId, canVerify, canEdit, canSetStatus, entering }: { s: SupplierRow; userId: string; canVerify: boolean; canEdit: boolean; canSetStatus: boolean; entering: Company[] }) {
   const linkable = entering.filter((c) => !s.links.some((l) => l.company_id === c.id));
   return (
-    <SidePanel title={s.legal_name} description={s.tin ? `TIN ${s.tin}` : "No TIN recorded"} trigger={<Button variant="outline" size="sm">Details</Button>}>
+    <SidePanel title={s.legal_name} description={[s.tin ? `TIN ${s.tin}` : "No TIN recorded", s.phone ?? "no phone recorded"].join(", ")} trigger={<Button variant="outline" size="sm">Details</Button>}>
       <Section title="Bank details">
         <VersionList userId={userId} canVerify={canVerify} verify={verifyBankDetail} reject={rejectBankDetail} versions={s.versions.map((v) => ({ ...v, label: `${v.bank_name} ••••${v.account_last4}`, display: <>{v.bank_name} <AccountNumber kind="supplier" id={v.id} last4={v.account_last4} state={v.number_state} /></> }))} />
         {canEdit && (
@@ -40,10 +41,10 @@ function SupplierPanel({ s, userId, canVerify, canEdit, canSetStatus, entering }
       </Section>
       <Section title="Latest payments"><PaymentHistory lines={s.history} /></Section>
       {canEdit && (
-        <Section title={canSetStatus ? "Correct name, TIN or status" : "Correct name or TIN"}>
-          <form action={updateSupplier} className="flex flex-col gap-3"><input type="hidden" name="id" value={s.id} /><NameField value={s.legal_name} /><TinField value={s.tin} />
+        <Section title={canSetStatus ? "Correct name, TIN, phone or status" : "Correct name, TIN or phone"}>
+          <form action={updateSupplier} className="flex flex-col gap-3"><input type="hidden" name="id" value={s.id} /><NameField value={s.legal_name} /><TinField value={s.tin} /><PhoneField value={s.phone} />
             {canSetStatus && <><input type="hidden" name="status_shown" value="1" /><label className="flex items-center gap-2 text-sm"><input type="checkbox" name="active" defaultChecked={s.is_active} />Active</label></>}
-            <p className="m-0 text-sm text-muted-foreground">Not allowed while this supplier has requests in progress.</p><div><SubmitButton variant="outline">Save</SubmitButton></div></form>
+            <p className="m-0 text-sm text-muted-foreground">Name, TIN and status cannot change while this supplier has requests in progress. The phone can.</p><div><SubmitButton variant="outline">Save</SubmitButton></div></form>
         </Section>
       )}
     </SidePanel>
@@ -61,10 +62,10 @@ export default async function Suppliers({ searchParams }: { searchParams: Promis
   const rows: DataRow[] = d.suppliers.map((s) => {
     const verified = verifiedVersion(s.versions), waiting = s.versions.some((v) => v.status === "PENDING");
     return {
-      id: s.id, search: `${s.legal_name} ${s.tin ?? ""}`, filters: listFilters(s.is_active, s.versions), sort: { name: s.legal_name, tin: s.tin ?? "" },
+      id: s.id, search: `${s.legal_name} ${s.tin ?? ""} ${s.phone ?? ""}`, filters: listFilters(s.is_active, s.versions), sort: { name: s.legal_name, tin: s.tin ?? "" },
       cells: {
-        name: <><b>{s.legal_name}</b>{!s.is_active && <Badge variant="destructive" className="ml-2">Inactive</Badge>}</>, tin: s.tin ?? <span className="text-muted-foreground">None</span>, companies: s.links.length > 0 ? s.links.map((l) => l.company).join(", ") : "None",
-        bank: <>{verified ? <>{verified.bank_name} <AccountNumber kind="supplier" id={verified.id} last4={verified.account_last4} state={verified.number_state} /></> : "None"}{waiting && <Badge variant="warning" className="ml-2">To verify</Badge>}</>, open: <SupplierPanel s={s} userId={me.id} canVerify={canVerify} canEdit={canEdit} canSetStatus={canSetStatus} entering={entering} />,
+        name: <><b>{s.legal_name}</b>{!s.is_active && <Badge variant="destructive" className="ml-2">Inactive</Badge>}</>, tin: s.tin ?? <span className="text-muted-foreground">None</span>, phone: s.phone ?? <span className="text-muted-foreground">None</span>, companies: s.links.length > 0 ? s.links.map((l) => l.company).join(", ") : "None",
+        bank: <>{verified ? <>{verified.bank_name} <AccountNumber kind="supplier" id={verified.id} last4={verified.account_last4} state={verified.number_state} /></> : <span className="text-muted-foreground">None (cash or cheque only)</span>}{waiting && <Badge variant="warning" className="ml-2">To verify</Badge>}</>, open: <SupplierPanel s={s} userId={me.id} canVerify={canVerify} canEdit={canEdit} canSetStatus={canSetStatus} entering={entering} />,
       },
     };
   });
@@ -72,8 +73,8 @@ export default async function Suppliers({ searchParams }: { searchParams: Promis
     <>
       <PageHeader title="Suppliers" description="One list for the whole group. Bank details are masked, and every change must be verified by someone other than the person who entered it."
         action={canEdit ? (
-          <SidePanel title="Add a supplier" description="Add bank details next. Someone else must verify them before any payment." trigger={<Button>Add a supplier</Button>}>
-            <form action={addSupplier} className="mt-3 flex flex-col gap-3"><NameField /><TinField />
+          <SidePanel title="Add a supplier" description="Bank details are optional. They are needed for bank transfers, and someone else must verify them first. Cash and cheque need none." trigger={<Button>Add a supplier</Button>}>
+            <form action={addSupplier} className="mt-3 flex flex-col gap-3"><NameField /><TinField /><PhoneField />
               <label className="f">Use for company<select name="company">{entering.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label><div><SubmitButton>Add supplier</SubmitButton></div></form>
           </SidePanel>
         ) : undefined} />

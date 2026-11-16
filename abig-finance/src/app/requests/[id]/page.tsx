@@ -46,9 +46,13 @@ export default async function RequestDetail({ params, searchParams }: { params: 
   const field = (action: string) => ({ id, version: String(r.version), action });
   const canDoSomething = Object.values(can).some(Boolean);
   const instRows: DataRow[] = d.installments.map((i) => ({ id: String(i.seq), cells: { seq: i.seq, due: dstr(i.due_date), amount: etb(i.amount) } }));
-  const payTo = r.person_kind === "TELEBIRR" ? `Telebirr ${r.telebirr_phone}`
+  const oneTime = r.payee_type === "ONE_TIME";
+  const payTo = oneTime ? (r.payment_method === "TELEBIRR" ? (r.ot_phone ? `Telebirr ${r.ot_phone}` : "Not set")
+      : r.ot_bank ? <>{r.ot_bank} <AccountNumber kind="one_time" id={r.one_time_payee_id} last4={r.ot_last4} state={r.ot_number_state} /></> : r.payment_method === "TRANSFER" ? "Not set" : "Not needed for this method")
+    : r.person_kind === "TELEBIRR" ? `Telebirr ${r.telebirr_phone}`
     : r.person_kind === "BANK" ? <>{r.person_bank} <AccountNumber kind="person" id={r.person_payment_detail_id} last4={r.person_last4} state={r.person_number_state} /></>
-    : r.bank_name ? <>{r.bank_name} <AccountNumber kind="supplier" id={r.supplier_bank_detail_id} last4={r.account_last4} state={r.bank_number_state} /></> : "Not set";
+    : r.bank_name ? <>{r.bank_name} <AccountNumber kind="supplier" id={r.supplier_bank_detail_id} last4={r.account_last4} state={r.bank_number_state} /></>
+    : r.payment_method === "CASH" || r.payment_method === "CHEQUE" ? "Not needed for this method" : "Not set";
   return (
     <>
       <p className="mute mb-2"><Link href={d.stage ? "/approvals" : "/requests"}>{d.stage ? "Approvals" : "Payment requests"}</Link> / {r.request_no}</p>
@@ -114,8 +118,9 @@ export default async function RequestDetail({ params, searchParams }: { params: 
         <dl className="m-0 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Fact label="Total"><b>{etb(r.total_amount)}</b>{r.amount_is_estimate && <Badge variant={r.amount_confirmed_at ? "outline" : "warning"} className="ml-2">{r.amount_confirmed_at ? "Estimate confirmed" : "Estimate"}</Badge>}</Fact>
           {r.recurring_occurrence && <Fact label="Recurring payment">{r.recurring_name ? <Link href="/recurring">{r.recurring_name}</Link> : "A recurring payment"}<div className="text-xs text-muted-foreground">Created for {dstr(r.recurring_occurrence)}</div></Fact>}
-          {d.restricted ? null : r.supplier_id ? <Fact label="Supplier">{r.payee}{r.tin && <div className="text-xs text-muted-foreground">TIN {r.tin}</div>}</Fact>
-            : <Fact label="Person">{r.payee}<div className="text-xs text-muted-foreground">{r.person_phone}, ID {d.fullId ?? maskId(r.id_last4 ?? "")}</div></Fact>}
+          {d.restricted ? null : r.supplier_id ? <Fact label="Supplier">{r.payee}{(r.tin || r.supplier_phone) && <div className="text-xs text-muted-foreground">{[r.tin && `TIN ${r.tin}`, r.supplier_phone].filter(Boolean).join(", ")}</div>}</Fact>
+            : oneTime ? <Fact label="One-time payee">{r.payee} <Badge variant="outline">Not registered</Badge><div className="text-xs text-muted-foreground">{r.ot_phone ?? "No phone recorded"}. Entered on this request; no supplier or person record.</div></Fact>
+            : <Fact label="Person">{r.payee}<div className="text-xs text-muted-foreground">{r.person_phone ? `${r.person_phone}, ` : ""}ID {d.fullId ?? maskId(r.id_last4 ?? "")}</div></Fact>}
           {!d.restricted && <Fact label="Pays to">{payTo} {(r.bank_status ?? r.person_detail_status ?? "VERIFIED") !== "VERIFIED" && <Badge variant="destructive">Not verified</Badge>}</Fact>}
           <Fact label="Debit account">{r.debit_label && r.debit_account_id ? <>{r.debit_label} · <AccountPlaceNumber a={{ id: r.debit_account_id, account_kind: r.account_kind ?? undefined, bank_name: r.debit_bank, account_last4: r.debit_last4, wallet_phone: r.wallet_phone, number_state: r.debit_number_state }} /></> : "Not chosen"} {holds && <Badge variant="secondary">Funds reserved</Badge>}</Fact>
           <Fact label="Payment method">{PAYMENT_METHODS[r.payment_method] ?? r.payment_method}</Fact>

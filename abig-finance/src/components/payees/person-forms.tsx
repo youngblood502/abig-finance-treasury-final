@@ -13,7 +13,7 @@ export function AddPersonForm({ companies, back }: { companies: { id: string; na
       {back && <input type="hidden" name="back" value={back} />}
       <label className="f">Company<select name="company">{companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
       <label className="f">Full name<input name="name" required /></label>
-      <label className="f">Phone<input name="phone" type="tel" required placeholder="0911 234 567" /></label>
+      <label className="f">Phone (optional)<input name="phone" type="tel" placeholder="0911 234 567" /></label>
       <label className="f">ID number<input name="id_number" required autoComplete="off" /></label>
       <label className="f">Usually paid by<select name="preferred" defaultValue="CASH">{METHODS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
       <p className="m-0 text-sm text-muted-foreground">Cash and cheque can be used straight away. Transfer and Telebirr need details that someone else has verified.</p>

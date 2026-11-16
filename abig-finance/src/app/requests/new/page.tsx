@@ -18,10 +18,10 @@ export default async function NewRequest({ searchParams }: { searchParams: Promi
   return (
     <>
       <PageHeader title="New payment request" description="The request belongs to the company that makes the payment. Submitting reserves the amount on the account you choose."
-        action={entering.length > 0 ? <SidePanel title="Add a person" description="A one-time payee needs no supplier registration. Add them before filling in the request: this page reloads." trigger={<Button variant="outline">Add a person</Button>}><div className="mt-3"><AddPersonForm companies={entering} back="request" /></div></SidePanel> : undefined} />
+        action={entering.length > 0 ? <SidePanel title="Add a person" description="For someone you will pay again. For a single payment, choose One-time payee on the request instead: nothing needs registering." trigger={<Button variant="outline">Add a person</Button>}><div className="mt-3"><AddPersonForm companies={entering} back="request" /></div></SidePanel> : undefined} />
       <Flash sp={sp} />
-      {d.payees.length === 0 ? <div className="rounded-xl border bg-card p-4">You can only create requests for suppliers and people that are active for a company where you are an Accountant. Add one first.</div>
-        : <NewRequestForm payees={d.payees} accounts={d.accounts} startCompany={company} canSchedule={can(me, "payment_request:schedule")} />}
+      {d.companies.length === 0 ? <div className="rounded-xl border bg-card p-4">You can only create requests for a company where you are an Accountant.</div>
+        : <NewRequestForm payees={d.payees} accounts={d.accounts} companies={d.companies} startCompany={company} canSchedule={can(me, "payment_request:schedule")} />}
     </>
   );
 }

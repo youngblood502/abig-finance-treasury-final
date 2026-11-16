@@ -26,7 +26,9 @@ function ReviewPanel({ r, stage }: { r: ReviewRow; stage: ApprovalStage }) {
     <SidePanel title={`${r.request_no}: ${r.payee ?? "No payee"}`} description={r.company} trigger={<Button size="sm">Review</Button>}>
       <dl className="m-0 rounded-md border bg-card p-3">
         <Fact label="Amount"><b>{etb(r.total_amount)}</b></Fact>
+        <Fact label="Payee">{r.payee ?? "No payee"}{r.payee_type === "ONE_TIME" && <Badge variant="outline" className="ml-2">One-time payee</Badge>}</Fact>
         <Fact label="Method">{PAYMENT_METHODS[r.method]}</Fact>
+        <Fact label="Pays to">{r.pays_to ?? (r.method === "CASH" || r.method === "CHEQUE" ? "Not needed for this method" : "Not set")}</Fact>
         <Fact label="Debit account">{r.account_label ?? "Not chosen"}</Fact>
         <Fact label="First due">{dstr(r.due)}</Fact>
         <Fact label="Entered by">{r.creator ?? "Someone at the company"}</Fact>
@@ -51,7 +53,7 @@ export default async function Approvals({ searchParams }: { searchParams: Promis
     sort: { no: r.request_no, company: r.company, payee: r.payee ?? "", amount: Number(r.total_amount), waiting: r.waiting_since.getTime() },
     cells: {
       no: <Link href={`/requests/${r.request_id}`}>{r.request_no}</Link>, company: r.company,
-      payee: <>{r.payee}{!r.document && <Badge variant="warning" className="ml-2">No document</Badge>}</>,
+      payee: <>{r.payee}{r.payee_type === "ONE_TIME" && <Badge variant="outline" className="ml-2">One-time</Badge>}{!r.document && <Badge variant="warning" className="ml-2">No document</Badge>}</>,
       amount: etb(r.total_amount), waiting: ageSince(r.waiting_since, now), review: <ReviewPanel r={r} stage={stage} />,
     },
   }));
