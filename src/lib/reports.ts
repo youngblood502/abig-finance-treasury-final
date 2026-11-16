@@ -31,23 +31,23 @@ export const filterQuery = (f: ReportFilters) => { const p = new URLSearchParams
 export interface PendingRow { request_no: string; company_name: string; payee_name: string | null; workflow_state: string; priority: string; seq: number; due_date: string; amount: string; account_label: string | null; bucket: string }
 /** Requests that have reserved funds and are not yet authenticated, one row per instalment. */
 export const pendingRows = (tx: Tx, company: string | null = null) => tx.q<PendingRow>(
-  `SELECT r.request_no, c.legal_name AS company_name, CASE WHEN ${member("r.debtor_company_id")} THEN COALESCE(s.legal_name, p.full_name) END AS payee_name, r.workflow_state::text AS workflow_state, r.priority, i.seq, i.due_date::text AS due_date, i.amount,
+  `SELECT r.request_no, c.legal_name AS company_name, CASE WHEN ${member("r.debtor_company_id")} THEN COALESCE(s.legal_name, p.full_name, ot.full_name) END AS payee_name, r.workflow_state::text AS workflow_state, r.priority, i.seq, i.due_date::text AS due_date, i.amount,
           da.account_label AS account_label,
           CASE WHEN i.due_date >= current_date THEN 'Not yet due' WHEN current_date - i.due_date <= 30 THEN '1-30 days overdue' WHEN current_date - i.due_date <= 60 THEN '31-60 days overdue' ELSE 'Over 60 days overdue' END AS bucket
-     FROM payment_requests r JOIN payment_installments i ON i.request_id = r.id JOIN companies c ON c.id = r.debtor_company_id LEFT JOIN suppliers s ON s.id = r.supplier_id LEFT JOIN person_payees p ON p.id = r.person_payee_id
+     FROM payment_requests r JOIN payment_installments i ON i.request_id = r.id JOIN companies c ON c.id = r.debtor_company_id LEFT JOIN suppliers s ON s.id = r.supplier_id LEFT JOIN person_payees p ON p.id = r.person_payee_id LEFT JOIN one_time_payees ot ON ot.id = r.one_time_payee_id
      LEFT JOIN company_bank_accounts da ON da.id = r.debit_account_id
     WHERE r.workflow_state IN ('RESERVED', 'VERIFIED') AND ($1::uuid IS NULL OR r.debtor_company_id = $1) ORDER BY i.due_date, r.request_no, i.seq`, [company]);
 
 export interface PaymentRow { authenticated_at: Date; request_no: string; company_name: string; payee_name: string | null; account_label: string | null; amount: string; workflow_state: string; payment_method: string; verified_by: string | null; authenticated_by: string | null }
 /** Authenticated and Paid requests: the account was debited. Authenticated ones are not yet confirmed by the bank. A search cannot reach a payee the person may not see. */
 export const paymentRows = (tx: Tx, f: Pick<ReportFilters, "from" | "to" | "q" | "method" | "state">, company: string | null = null) => tx.q<PaymentRow>(
-  `SELECT r.authenticated_at, r.request_no, c.legal_name AS company_name, CASE WHEN ${member("r.debtor_company_id")} THEN COALESCE(s.legal_name, p.full_name) END AS payee_name, da.account_label AS account_label, r.total_amount AS amount, r.workflow_state::text AS workflow_state, r.payment_method::text AS payment_method,
+  `SELECT r.authenticated_at, r.request_no, c.legal_name AS company_name, CASE WHEN ${member("r.debtor_company_id")} THEN COALESCE(s.legal_name, p.full_name, ot.full_name) END AS payee_name, da.account_label AS account_label, r.total_amount AS amount, r.workflow_state::text AS workflow_state, r.payment_method::text AS payment_method,
           CASE WHEN ${member("r.debtor_company_id")} THEN vu.full_name END AS verified_by, CASE WHEN ${member("r.debtor_company_id")} THEN au.full_name END AS authenticated_by
-     FROM payment_requests r JOIN companies c ON c.id = r.debtor_company_id LEFT JOIN suppliers s ON s.id = r.supplier_id LEFT JOIN person_payees p ON p.id = r.person_payee_id
+     FROM payment_requests r JOIN companies c ON c.id = r.debtor_company_id LEFT JOIN suppliers s ON s.id = r.supplier_id LEFT JOIN person_payees p ON p.id = r.person_payee_id LEFT JOIN one_time_payees ot ON ot.id = r.one_time_payee_id
      LEFT JOIN company_bank_accounts da ON da.id = r.debit_account_id LEFT JOIN users vu ON vu.id = r.verified_by LEFT JOIN users au ON au.id = r.authenticated_by
     WHERE r.workflow_state IN ('AUTHENTICATED', 'PAID') AND r.authenticated_at >= $1::date AND r.authenticated_at < $2::date + 1 AND ($3::uuid IS NULL OR r.debtor_company_id = $3)
       AND ($4::text IS NULL OR r.payment_method::text = $4) AND ($5::text IS NULL OR r.workflow_state::text = $5)
-      AND ($6::text IS NULL OR r.request_no ILIKE '%' || $6 || '%' OR c.legal_name ILIKE '%' || $6 || '%' OR (${member("r.debtor_company_id")} AND COALESCE(s.legal_name, p.full_name) ILIKE '%' || $6 || '%'))
+      AND ($6::text IS NULL OR r.request_no ILIKE '%' || $6 || '%' OR c.legal_name ILIKE '%' || $6 || '%' OR (${member("r.debtor_company_id")} AND COALESCE(s.legal_name, p.full_name, ot.full_name) ILIKE '%' || $6 || '%'))
     ORDER BY r.authenticated_at DESC`, [f.from, f.to, company, f.method, f.state, f.q]);
 
 export interface OutstandingRow { id: string; account_label: string; access: AccessLevel; request_no: string; company_name: string; payee_name: string | null; payment_method: string; amount: string; age_days: number; overdue: boolean; ticked: boolean }

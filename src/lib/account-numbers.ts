@@ -8,8 +8,8 @@ import { WorkflowError } from "./errors";
 
 /** What a page may offer for one number. Decided by the database: MASKED (not for this person), NOT_RECORDED (only the last four digits exist), RECORDED. */
 export type NumberState = "MASKED" | "NOT_RECORDED" | "RECORDED";
-/** account: a company's own bank account. supplier: a supplier bank detail version. person: a person's bank payment detail version. */
-export type NumberKind = "account" | "supplier" | "person";
+/** account: a company's own bank account. supplier: a supplier bank detail version. person: a person's bank payment detail version. one_time: a one-time payee entered on a request. */
+export type NumberKind = "account" | "supplier" | "person" | "one_time";
 
 export const normalizeAccountNumber = (raw: string) => raw.replace(/[\s-]/g, "");
 
@@ -24,8 +24,9 @@ const REVEAL: Record<NumberKind, string> = {
   account: "SELECT reveal_account_number($1) AS v",
   supplier: "SELECT reveal_supplier_account($1) AS v",
   person: "SELECT reveal_person_account($1) AS v",
+  one_time: "SELECT reveal_one_time_account($1) AS v",
 };
-export const isNumberKind = (k: unknown): k is NumberKind => k === "account" || k === "supplier" || k === "person";
+export const isNumberKind = (k: unknown): k is NumberKind => k === "account" || k === "supplier" || k === "person" || k === "one_time";
 
 /** The full number for this person, or null when they may not see it or it was never recorded. The database audits every number it hands out. */
 export async function revealNumber(tx: Tx, kind: NumberKind, id: string): Promise<string | null> {

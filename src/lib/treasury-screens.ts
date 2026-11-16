@@ -27,8 +27,8 @@ export const treasuryOverview = (tx: Tx, company: string | null) => tx.q<Overvie
 export interface ScheduleRow { request_id: string; request_no: string; seq: number; due_date: string; amount: string; workflow_state: string; company: string; payee: string | null; account_id: string | null; account_label: string | null }
 /** Installments on requests that hold funds, falling due within 30 days or already overdue. Row-level security limits this to the person's own companies. */
 export const paymentSchedule = (tx: Tx, company: string | null) => tx.q<ScheduleRow>(
-  `SELECT r.id AS request_id, r.request_no, i.seq, i.due_date::text AS due_date, i.amount, r.workflow_state::text AS workflow_state, c.legal_name AS company, COALESCE(s.legal_name, p.full_name) AS payee, a.id AS account_id, a.account_label
-     FROM payment_installments i JOIN payment_requests r ON r.id = i.request_id JOIN companies c ON c.id = r.debtor_company_id LEFT JOIN suppliers s ON s.id = r.supplier_id LEFT JOIN person_payees p ON p.id = r.person_payee_id
+  `SELECT r.id AS request_id, r.request_no, i.seq, i.due_date::text AS due_date, i.amount, r.workflow_state::text AS workflow_state, c.legal_name AS company, COALESCE(s.legal_name, p.full_name, ot.full_name) AS payee, a.id AS account_id, a.account_label
+     FROM payment_installments i JOIN payment_requests r ON r.id = i.request_id JOIN companies c ON c.id = r.debtor_company_id LEFT JOIN suppliers s ON s.id = r.supplier_id LEFT JOIN person_payees p ON p.id = r.person_payee_id LEFT JOIN one_time_payees ot ON ot.id = r.one_time_payee_id
      LEFT JOIN company_bank_accounts a ON a.id = r.debit_account_id
     WHERE r.workflow_state IN ('RESERVED','VERIFIED') AND i.due_date <= current_date + 30 AND ($1::uuid IS NULL OR r.debtor_company_id = $1) ORDER BY i.due_date, r.request_no, i.seq`, [company]);
 

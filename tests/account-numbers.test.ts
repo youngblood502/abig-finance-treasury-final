@@ -65,9 +65,10 @@ describe("entering a number", () => {
     expect(decryptSecret(n.enc)).toBe("100012345678");
     for (const bad of ["1234", "12345", "ABC123456789", "1".repeat(31), ""]) expect(() => protectAccountNumber(bad)).toThrow(/full account number/);
   });
-  it("is stored encrypted with the last four beside it, as text, on all three tables", async () => {
+  it("is stored encrypted with the last four beside it, as text, on all four tables", async () => {
+    // one_time_payees: bank details entered on a request for a one-time payee (tests/one-time-payees.test.ts covers its encryption and reveal).
     const types = await rows(owner, "SELECT table_name t, data_type d FROM information_schema.columns WHERE column_name = 'account_number_enc' ORDER BY 1");
-    expect(types).toEqual([{ t: "company_bank_accounts", d: "text" }, { t: "person_payment_details", d: "text" }, { t: "supplier_bank_details", d: "text" }]);
+    expect(types).toEqual([{ t: "company_bank_accounts", d: "text" }, { t: "one_time_payees", d: "text" }, { t: "person_payment_details", d: "text" }, { t: "supplier_bank_details", d: "text" }]);
     const sb = (await rows(owner, "SELECT account_last4, account_number_enc, status, version FROM supplier_bank_details WHERE id = $1", [supplierBank]))[0];
     expect([sb.account_last4, sb.status, sb.version]).toEqual(["2219", "VERIFIED", 2]);
     expect(decryptSecret(sb.account_number_enc)).toBe(NUM.supplier);

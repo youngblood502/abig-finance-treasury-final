@@ -74,8 +74,20 @@ const savedMsg = (mode: SaveMode, draft: string) => (mode === "submit" ? SUBMITT
 const afterSave = (uid: string, id: string, mode: SaveMode, f: FormData) =>
   mode === "submit" ? submitSaved(uid, id) : mode === "schedule" ? scheduleSaved(uid, id, str(f, "scheduled_for")) : Promise.resolve(null);
 
-/** The verified details a request will pay to. Empty until they exist; submitting then explains what is missing. */
-const supplierDetail = async (tx: Tx, supplierId: string) => (await tx.q<{ id: string }>("SELECT id FROM supplier_bank_details WHERE supplier_id = $1 AND status = 'VERIFIED'", [supplierId]))[0]?.id ?? null;
+/**
+ * The verified details a request will pay to. Empty until they exist; submitting then explains what is missing.
+ * A supplier's details are attached only when the method sends money to them (transfer, Telebirr): only that supplier's own verified version, never another.
+ */
+const SUPPLIER_DETAIL_METHODS = new Set(["TRANSFER", "TELEBIRR"]);
+const supplierDetail = async (tx: Tx, supplierId: string, method: string) => !SUPPLIER_DETAIL_METHODS.has(method) ? null
+  : (await tx.q<{ id: string }>("SELECT id FROM supplier_bank_details WHERE supplier_id = $1 AND status = 'VERIFIED'", [supplierId]))[0]?.id ?? null;
+/** A one-time payee's details from the form. The full account number is encrypted here; an empty one means none (or, on an edit, keep the current one). */
+const oneTimeFields = (f: FormData) => {
+  const name = str(f, "ot_name"), number = str(f, "ot_account_number");
+  if (!name) throw new WorkflowError(422, "Enter the payee's name.");
+  const n = number ? protectAccountNumber(number) : null;
+  return { name, phone: str(f, "ot_phone") || null, bank: str(f, "ot_bank") || null, last4: n?.last4 ?? null, enc: n?.enc ?? null };
+};
 const personDetail = async (tx: Tx, personId: string, method: string) => {
   const kind = PERSON_DETAIL_FOR_METHOD[method];
   return kind ? (await tx.q<{ id: string }>("SELECT id FROM person_payment_details WHERE person_id = $1 AND kind = $2 AND status = 'VERIFIED'", [personId, kind]))[0]?.id ?? null : null;
@@ -90,18 +102,23 @@ async function saveNewRequest(f: FormData, mode: SaveMode) {
   let id: string | null = null; let err: string | null = null; let notSubmitted: string | null = null;
   try {
     assertCan(await requireMe(), "payment_request:create");
-    const [companyId, payeeType, payeeId] = str(f, "target").split("|");
+    // A one-time payee is entered on the request: no supplier or person record is created for it.
+    const oneTime = str(f, "payee_mode") === "one_time";
+    const [companyId, payeeType, payeeId] = oneTime ? [str(f, "ot_company"), "ONE_TIME", ""] : str(f, "target").split("|");
     const person = payeeType === "PERSON", method = str(f, "payment_method") || "TRANSFER";
+    const ot = oneTime ? oneTimeFields(f) : null;
     const dues = f.getAll("due").map(String), amts = f.getAll("amt").map(String);
     const inst = dues.map((d, i) => ({ d, a: Number(amts[i]) })).filter((x) => x.d && x.a > 0);
     const total = inst.reduce((s, x) => s + x.a, 0);
     const file = f.get("invoice");
     id = await dbl(withUser(uid, async (tx) => {
-      const details = person ? await personDetail(tx, payeeId, method) : await supplierDetail(tx, payeeId);
+      const otId = ot ? (await tx.q<{ id: string }>("SELECT one_time_payee_create($1,$2,$3,$4,$5,$6) AS id", [companyId, ot.name, ot.phone, ot.bank, ot.last4, ot.enc]))[0].id : null;
+      const details = ot ? null : person ? await personDetail(tx, payeeId, method) : await supplierDetail(tx, payeeId, method);
+      const supplier = !ot && !person;
       const rid = (await tx.q<{ id: string }>(
-        `INSERT INTO payment_requests (debtor_company_id, payee_type, supplier_id, person_payee_id, supplier_bank_detail_id, person_payment_detail_id, debit_account_id, created_by, invoice_ref, invoice_date, description, priority, total_amount, payment_method)
-         VALUES ($1,$2::payee_type,$3,$4,$5,$6,$7,$8,$9,$10::date,$11,$12,$13,$14::payment_method) RETURNING id`,
-        [companyId, person ? "PERSON" : "SUPPLIER", person ? null : payeeId, person ? payeeId : null, person ? null : details, person ? details : null, str(f, "account") || null, uid, str(f, "invoice_ref") || null, str(f, "invoice_date") || null, str(f, "description") || null, str(f, "priority") || "NORMAL", total || 0, method]))[0].id;
+        `INSERT INTO payment_requests (debtor_company_id, payee_type, supplier_id, person_payee_id, one_time_payee_id, supplier_bank_detail_id, person_payment_detail_id, debit_account_id, created_by, invoice_ref, invoice_date, description, priority, total_amount, payment_method)
+         VALUES ($1,$2::payee_type,$3,$4,$15,$5,$6,$7,$8,$9,$10::date,$11,$12,$13,$14::payment_method) RETURNING id`,
+        [companyId, ot ? "ONE_TIME" : person ? "PERSON" : "SUPPLIER", supplier ? payeeId : null, person ? payeeId : null, supplier ? details : null, person ? details : null, str(f, "account") || null, uid, str(f, "invoice_ref") || null, str(f, "invoice_date") || null, str(f, "description") || null, str(f, "priority") || "NORMAL", total || 0, method, otId]))[0].id;
       for (const [i, x] of inst.entries()) await tx.q("INSERT INTO payment_installments (request_id, seq, due_date, amount) VALUES ($1,$2,$3::date,$4)", [rid, i + 1, x.d, x.a]);
       if (file instanceof File && file.size > 0) await saveAttachment(tx, uid, rid, file, "INVOICE");
       return rid;
@@ -183,8 +200,9 @@ export async function recordExecution(f: FormData) {
 
 // ---------- Suppliers ----------
 export async function addSupplier(f: FormData) {
-  return act("/suppliers", "Supplier added. Add bank details next; a Verifier must verify them before any payment request.", guard(["supplier:manage"], (uid) => dbl(withUser(uid, async (tx) => {
-    const sid = (await tx.q<{ id: string }>("INSERT INTO suppliers (legal_name, tin, created_by) VALUES ($1,$2,$3) RETURNING id", [str(f, "name"), str(f, "tin").trim() || null, uid]))[0].id;
+  return act("/suppliers", "Supplier added. Cash and cheque requests can be made now. For bank transfers, add bank details; someone else must verify them first.", guard(["supplier:manage"], (uid) => dbl(withUser(uid, async (tx) => {
+    // Bank details and phone are optional. An empty phone is stored as none; one that is entered is checked and normalised by the database.
+    const sid = (await tx.q<{ id: string }>("INSERT INTO suppliers (legal_name, tin, phone, created_by) VALUES ($1,$2,$3,$4) RETURNING id", [str(f, "name"), str(f, "tin").trim() || null, str(f, "phone") || null, uid]))[0].id;
     if (str(f, "company")) await tx.q("INSERT INTO company_suppliers (company_id, supplier_id, created_by) VALUES ($1,$2,$3)", [str(f, "company"), sid, uid]);
   }))));
 }
@@ -219,10 +237,13 @@ async function applyDraftEdits(tx: Tx, uid: string, f: FormData, id: string) {
   const file = f.get("invoice");
   const cur = (await tx.q<{ debtor_company_id: string; payee_type: string; person_payee_id: string | null }>("SELECT debtor_company_id, payee_type::text AS payee_type, person_payee_id FROM payment_requests WHERE id = $1", [id]))[0];
   if (!cur) throw new WorkflowError(404, "Request not found.");
-  const person = cur.payee_type === "PERSON", method = str(f, "payment_method") || "TRANSFER", supplierId = person ? null : str(f, "supplier");
-  const details = person ? await personDetail(tx, cur.person_payee_id!, method) : await supplierDetail(tx, supplierId!);
+  const person = cur.payee_type === "PERSON", oneTime = cur.payee_type === "ONE_TIME", method = str(f, "payment_method") || "TRANSFER";
+  const supplierId = person || oneTime ? null : str(f, "supplier");
+  // A one-time payee is corrected by pointing the draft at newly entered details; the earlier ones stay on record and the change is audited.
+  if (oneTime) { const ot = oneTimeFields(f); await tx.q("SELECT one_time_payee_revise($1,$2,$3,$4,$5,$6)", [id, ot.name, ot.phone, ot.bank, ot.last4, ot.enc]); }
+  const details = oneTime ? null : person ? await personDetail(tx, cur.person_payee_id!, method) : await supplierDetail(tx, supplierId!, method);
   const n = await tx.q("UPDATE payment_requests SET supplier_id = $2, supplier_bank_detail_id = $3, person_payment_detail_id = $11, invoice_ref = $4, invoice_date = $5::date, description = $6, priority = $7, total_amount = $8, debit_account_id = $9, payment_method = $10::payment_method WHERE id = $1 RETURNING id",
-    [id, supplierId, person ? null : details, str(f, "invoice_ref") || null, str(f, "invoice_date") || null, str(f, "description") || null, str(f, "priority") || "NORMAL", inst.reduce((s, x) => s + x.a, 0) || 1, str(f, "account") || null, method, person ? details : null]);
+    [id, supplierId, person || oneTime ? null : details, str(f, "invoice_ref") || null, str(f, "invoice_date") || null, str(f, "description") || null, str(f, "priority") || "NORMAL", inst.reduce((s, x) => s + x.a, 0) || 1, str(f, "account") || null, method, person ? details : null]);
   if (!n.length) throw new WorkflowError(403, "This request can no longer be edited by you.");
   await tx.q("DELETE FROM payment_installments WHERE request_id = $1", [id]);
   for (const [i, x] of inst.entries()) await tx.q("INSERT INTO payment_installments (request_id, seq, due_date, amount) VALUES ($1,$2,$3::date,$4)", [id, i + 1, x.d, x.a]);
@@ -299,7 +320,8 @@ export async function updateSupplier(f: FormData) {
   const active = str(f, "status_shown") === "1" ? str(f, "active") === "on" : null;
   return act("/suppliers", "Supplier updated.", guard(["supplier:manage"], (uid) => dbl(withUser(uid, async (tx) => {
     if (active !== null && !(await canChangeSupplierStatus(tx))) throw new WorkflowError(403, "Only a Verifier or Finance Manager can change a supplier's status.");
-    return tx.q("SELECT supplier_update($1,$2,$3,$4)", [str(f, "id"), str(f, "name"), str(f, "tin"), active]);
+    await tx.q("SELECT supplier_update($1,$2,$3,$4)", [str(f, "id"), str(f, "name"), str(f, "tin"), active]);
+    return tx.q("SELECT supplier_set_phone($1,$2)", [str(f, "id"), str(f, "phone") || null]);
   }))));
 }
 

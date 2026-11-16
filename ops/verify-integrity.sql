@@ -58,7 +58,8 @@ WITH checks AS (
   UNION ALL SELECT 'request past draft without a debit account', count(*) FROM payment_requests r WHERE r.workflow_state NOT IN ('DRAFT','SCHEDULED','REJECTED','CANCELLED') AND r.debit_account_id IS NULL
   UNION ALL SELECT 'request debiting an account its company is not linked to', count(*) FROM payment_requests r
     WHERE r.debit_account_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM company_bank_account_access g WHERE g.account_id = r.debit_account_id AND g.company_id = r.debtor_company_id AND 'USE' = ANY(g.permissions))
-  UNION ALL SELECT 'request without exactly one payee', count(*) FROM payment_requests r WHERE (r.supplier_id IS NULL) = (r.person_payee_id IS NULL)
+  UNION ALL SELECT 'request without exactly one payee', count(*) FROM payment_requests r WHERE num_nonnulls(r.supplier_id, r.person_payee_id, r.one_time_payee_id) <> 1
+  UNION ALL SELECT 'request paying a one-time payee from another company', count(*) FROM payment_requests r JOIN one_time_payees o ON o.id = r.one_time_payee_id WHERE o.company_id <> r.debtor_company_id
   UNION ALL SELECT 'request paying a person from another company', count(*) FROM payment_requests r JOIN person_payees p ON p.id = r.person_payee_id WHERE p.company_id <> r.debtor_company_id
   UNION ALL SELECT 'payment method that does not fit its account', count(*) FROM payment_requests r JOIN company_bank_accounts a ON a.id = r.debit_account_id
     WHERE r.workflow_state IN ('RESERVED','VERIFIED','AUTHENTICATED','PAID')

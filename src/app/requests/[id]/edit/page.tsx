@@ -14,7 +14,8 @@ export default async function EditRequest({ params, searchParams }: { params: Pr
   const me = await requireMe();
   requireAccess(me, "/requests/new");
   const d = await withUser(me.id, async (tx) => {
-    const r = (await tx.q<any>("SELECT r.*, r.payee_type::text AS payee_kind, p.full_name AS person_name, c.legal_name AS company FROM payment_requests r JOIN companies c ON c.id = r.debtor_company_id LEFT JOIN person_payees p ON p.id = r.person_payee_id WHERE r.id = $1", [id]))[0];
+    const r = (await tx.q<any>(`SELECT r.*, r.payee_type::text AS payee_kind, p.full_name AS person_name, c.legal_name AS company, ot.full_name AS ot_name, ot.phone AS ot_phone, ot.bank_name AS ot_bank, ot.account_last4 AS ot_last4
+      FROM payment_requests r JOIN companies c ON c.id = r.debtor_company_id LEFT JOIN person_payees p ON p.id = r.person_payee_id LEFT JOIN one_time_payees ot ON ot.id = r.one_time_payee_id WHERE r.id = $1`, [id]))[0];
     if (!r) return null;
     return {
       r,
@@ -41,7 +42,14 @@ export default async function EditRequest({ params, searchParams }: { params: Pr
         <input type="hidden" name="id" value={id} />
         {scheduled && <input type="hidden" name="version" value={r.version} />}
         <div className="form">
-          {r.payee_kind === "PERSON" ? <div><span className="mute">Person</span><br />{r.person_name}</div> : <label className="f">Supplier<select name="supplier" defaultValue={r.supplier_id}>{d.suppliers.map((s: any) => <option key={s.id} value={s.id} disabled={!s.bank_ok}>{s.legal_name}{s.bank_ok ? "" : " (bank details not verified)"}</option>)}</select></label>}
+          {r.payee_kind === "PERSON" ? <div><span className="mute">Person</span><br />{r.person_name}</div>
+            : r.payee_kind === "ONE_TIME" ? <>
+              <label className="f">One-time payee name<input name="ot_name" required maxLength={200} defaultValue={r.ot_name ?? ""} /></label>
+              <label className="f">Phone (optional; needed for Telebirr)<input name="ot_phone" type="tel" defaultValue={r.ot_phone ?? ""} placeholder="0911 234 567" /></label>
+              <label className="f">Bank (needed for a transfer; clear it to remove the bank details)<input name="ot_bank" maxLength={120} defaultValue={r.ot_bank ?? ""} /></label>
+              <label className="f">Full account number ({r.ot_last4 ? `leave empty to keep ••••${r.ot_last4}` : "needed for a transfer"})<input name="ot_account_number" minLength={6} maxLength={40} inputMode="numeric" autoComplete="off" spellCheck={false} /></label>
+            </>
+            : <label className="f">Supplier<select name="supplier" defaultValue={r.supplier_id}>{d.suppliers.map((s: any) => <option key={s.id} value={s.id}>{s.legal_name}{s.bank_ok ? "" : " (no verified bank details: cash or cheque only)"}</option>)}</select></label>}
           <label className="f">Pay from (debit account)<select name="account" required defaultValue={r.debit_account_id ?? ""}><option value="" disabled>Choose an account</option>{d.accounts.map((a: any) => <option key={a.id} value={a.id}>{a.account_label} · {accountPlace(a)} — available {etb(a.available_balance)}</option>)}</select></label>
           <label className="f">Invoice reference (optional)<input name="invoice_ref" defaultValue={r.invoice_ref ?? ""} /></label>
           <label className="f">Invoice date (optional)<input name="invoice_date" type="date" defaultValue={dstr(r.invoice_date)} /></label>

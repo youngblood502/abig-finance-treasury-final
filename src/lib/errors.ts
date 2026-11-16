@@ -9,7 +9,9 @@ export function translate(e: unknown): never {
     if (err.constraint === "person_payees_phone_key") throw new WorkflowError(409, "Someone in this company already has that phone number.");
     if (err.constraint === "person_payees_id_hash_key") throw new WorkflowError(409, "Someone in this company already has that ID number.");
     if (err.constraint === "company_bank_accounts_wallet_phone") throw new WorkflowError(409, "A Telebirr wallet with that phone number already exists.");
-    if (err.constraint === "payment_requests_payee_chk") throw new WorkflowError(422, "A request pays either one supplier or one person.");
+    if (err.constraint === "payment_requests_payee_chk") throw new WorkflowError(422, "A request pays exactly one supplier, one person or one one-time payee, and cannot be switched to another kind of payee.");
+    if (err.constraint === "payment_requests_one_time_payee_once") throw new WorkflowError(409, "Those payee details already belong to another request.");
+    if (err.constraint === "suppliers_phone_check" || err.constraint === "one_time_payees_phone_chk") throw new WorkflowError(422, "Enter a valid phone number, or leave it empty.");
     if (err.constraint === "reconciliation_lines_match_once") throw new WorkflowError(409, "That payment is already matched.");
     if (err.constraint === "payment_transactions_account_id_reference_key") throw new WorkflowError(409, "That bank reference was already recorded on this account.");
     if (/row-level security|permission denied/.test(err.message)) throw new WorkflowError(403, "You are not allowed to do that.");
