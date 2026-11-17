@@ -1,22 +1,33 @@
-import nodemailer from "nodemailer";
 import type { Pool } from "pg";
+import { resolveMail, senderFor, type EmailSettingsRow, type Mail, type Sender } from "../lib/mail-settings";
 import { compose, type OutboxEvent } from "../lib/notification-text";
 
 // The wording lives in lib/notification-text.ts, shared with the in-app bell; it is re-exported here for existing callers.
 export { compose, type OutboxEvent };
 
-export interface Mail { to: string; subject: string; text: string }
-export type Sender = (m: Mail) => Promise<void>;
+export type { Mail, Sender };
 
 /**
- * SMTP_URL, for example smtps://user:password@smtp.example.com:465. Without it, mails are printed to the console.
- * The timeouts keep one send well inside the five-minute lease, which is renewed before each recipient (nodemailer's own default is ten minutes).
+ * How the worker sends. With a database pool, the settings a system administrator saved are used, and checked again every 30 seconds so that a change
+ * on the Administration screen takes effect without a restart. With none saved (or without a pool) it is the environment, as before: SMTP_URL, for
+ * example smtps://user:password@smtp.example.com:465, and MAIL_FROM. Without either, mails are printed to the console.
+ * A saved configuration that cannot be used (its password cannot be decrypted with this server's key) fails the send, so the outbox retries and the
+ * failure shows on the notification monitor; it never falls back silently to another mail server.
  */
-export function makeSender(): Sender {
-  const url = process.env.SMTP_URL;
-  if (!url) return async (m) => { console.log(`[mail] to=${m.to} subject=${m.subject}`); };
-  const transport = nodemailer.createTransport({ url, connectionTimeout: 30_000, greetingTimeout: 30_000, socketTimeout: 60_000 } as Parameters<typeof nodemailer.createTransport>[0]); const from = process.env.MAIL_FROM ?? "ABIG Finance <no-reply@localhost>";
-  return async (m) => { await transport.sendMail({ from, ...m }); };
+export function makeSender(pool?: Pool, env: Record<string, string | undefined> = process.env, refreshMs = 30_000): Sender {
+  let current = senderFor(resolveMail(null, env)), stamp = "ENV", checked = 0;
+  if (!pool) return current.send;
+  return async (m) => {
+    if (Date.now() - checked >= refreshMs) {
+      let row: EmailSettingsRow | null = null;
+      try { row = (await pool.query<EmailSettingsRow>("SELECT * FROM worker_email_settings()")).rows[0] ?? null; }
+      catch (e) { if ((e as { code?: string }).code !== "42883") throw e; }   // a database not yet migrated has no saved settings: the environment is used
+      const next = row ? `SAVED ${new Date(row.updated_at ?? 0).toISOString()}` : "ENV";
+      if (next !== stamp) { const made = senderFor(resolveMail(row, env)); current.close(); current = made; stamp = next; }
+      checked = Date.now();
+    }
+    await current.send(m);
+  };
 }
 
 

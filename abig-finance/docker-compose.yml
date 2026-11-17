@@ -29,6 +29,11 @@ services:
       DATABASE_URL: postgresql://abig_app:${APP_DB_PASSWORD}@db:5432/abig
       AUTH_DATABASE_URL: postgresql://abig_auth:${AUTH_DB_PASSWORD}@db:5432/abig
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY}
+      # Encrypts the SMTP password saved under Administration > Email. Its own key, shared only with the worker.
+      MAIL_ENCRYPTION_KEY: ${MAIL_ENCRYPTION_KEY}
+      # So Administration > Email shows, and can test, the deployment's mail settings while nothing is saved there.
+      SMTP_URL: ${SMTP_URL}
+      MAIL_FROM: ${MAIL_FROM}
       STORAGE_DIR: /data/storage
       REQUIRE_MFA: "true"
     volumes: [storage:/data/storage]
@@ -40,6 +45,9 @@ services:
     environment:
       WORKER_DATABASE_URL: postgresql://abig_worker:${WORKER_DB_PASSWORD}@db:5432/abig
       APP_URL: https://${APP_DOMAIN}
+      # Reads the SMTP password an administrator saved under Administration > Email. Same value as the app's; the worker never gets APP_ENCRYPTION_KEY.
+      MAIL_ENCRYPTION_KEY: ${MAIL_ENCRYPTION_KEY}
+      # Used only while no email settings are saved in Administration.
       SMTP_URL: ${SMTP_URL}
       MAIL_FROM: ${MAIL_FROM}
 

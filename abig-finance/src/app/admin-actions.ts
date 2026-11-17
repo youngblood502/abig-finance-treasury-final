@@ -4,9 +4,10 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { adminBackPath, isUuid } from "@/lib/admin";
 import { adminResetTotp, adminSetPassword, adminUnlock, revokeSessions } from "@/lib/auth";
-import { temporaryPassword } from "@/lib/crypto";
+import { encryptMailSecret, mailKeyProblem, temporaryPassword } from "@/lib/crypto";
 import { withUser } from "@/lib/db";
 import { message, translate, WorkflowError } from "@/lib/errors";
+import { emailSettingsProblem, isEmail, sendTestEmail, type EmailSettingsRow } from "@/lib/mail-settings";
 import { currentUserId } from "@/lib/session";
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
@@ -19,12 +20,12 @@ async function admin<T>(fn: (tx: import("@/lib/db").Tx, uid: string) => Promise<
     return fn(tx, uid);
   }).catch(translate);
 }
-async function done(back: string, ok: string, fn: () => Promise<unknown>, secret?: () => string | undefined): Promise<never> {
+async function done(back: string, ok: string | (() => string), fn: () => Promise<unknown>, secret?: () => string | undefined): Promise<never> {
   let err: string | null = null;
   try { await fn(); } catch (e) { err = message(e); }
   const s = secret?.(); if (s && !err) (await cookies()).set("abig_flash_secret", s, { httpOnly: true, sameSite: "strict", path: "/admin", maxAge: 60, secure: process.env.NODE_ENV === "production" });
   revalidatePath("/admin", "layout");
-  redirect(`${back}${back.includes("?") ? "&" : "?"}${err ? "err=" + encodeURIComponent(err) : "msg=" + encodeURIComponent(ok)}`);
+  redirect(`${back}${back.includes("?") ? "&" : "?"}${err ? "err=" + encodeURIComponent(err) : "msg=" + encodeURIComponent(typeof ok === "string" ? ok : ok())}`);
 }
 const audit = (tx: import("@/lib/db").Tx, uid: string, action: string, entity: string | null, meta: object, type = "USER") =>
   tx.q("INSERT INTO audit_events (actor_id, action, entity_type, entity_id, metadata) VALUES ($1,$2,$3,$4,$5)", [uid, action, type, entity, JSON.stringify(meta)]);
@@ -139,4 +140,37 @@ export async function retryNotification(f: FormData) {
     if (!isUuid(id)) throw new WorkflowError(404, "Notification not found.");
     await tx.q("SELECT admin_notification_retry($1)", [id]);
   }));
+}
+
+// ---------- Email settings ----------
+/**
+ * Saves the mail server settings. The password is encrypted here, on the server, before it goes to the database; an empty password field keeps the saved one.
+ * The database checks every value again, refuses anyone but a system administrator, and audits what changed without the password.
+ */
+export async function saveEmailSettings(f: FormData) {
+  return done("/admin?tab=email", "Email settings saved. Send a test email to check them.", () => admin(async (tx) => {
+    const i = { host: str(f, "host").toLowerCase(), port: str(f, "port"), username: str(f, "username"), password: String(f.get("password") ?? ""), security: str(f, "security"),
+                senderName: str(f, "sender_name").replace(/\s+/g, " "), senderEmail: str(f, "sender_email").toLowerCase() };
+    const saved = (await tx.q<{ password_set: boolean }>("SELECT password_set FROM admin_email_settings()"))[0]?.password_set ?? false;
+    const problem = emailSettingsProblem(i, saved); if (problem) throw new WorkflowError(422, problem);
+    const keyProblem = i.password ? mailKeyProblem() : null; if (keyProblem) throw new WorkflowError(422, keyProblem);
+    await tx.q("SELECT admin_save_email_settings($1,$2,$3,$4,$5,$6,$7,$8)",
+      [i.host, Number(i.port), i.username, i.password ? encryptMailSecret(i.password) : null, i.security, f.get("tls_verify") === "on", i.senderName, i.senderEmail]);
+  }));
+}
+/** Removes the saved settings, so the deployment's own settings (SMTP_URL, MAIL_FROM) are used again. */
+export async function clearEmailSettings() {
+  return done("/admin?tab=email", "Saved email settings removed. Email now uses the settings of the deployment.", () => admin((tx) => tx.q("SELECT admin_clear_email_settings()")));
+}
+/** Sends one test message through the settings in use and says what the mail server answered. The result is audited. */
+export async function sendEmailTest(f: FormData) {
+  let to = str(f, "to").toLowerCase();
+  return done("/admin?tab=email", () => `Test email sent to ${to}. Check that it arrived.`, async () => {
+    const d = await admin(async (tx) => ({ row: (await tx.q<EmailSettingsRow>("SELECT * FROM admin_email_transport()"))[0] ?? null, mine: (await tx.q<{ email: string }>("SELECT email FROM users WHERE id = app_user_id()"))[0].email }));
+    to ||= d.mine;
+    if (!isEmail(to)) throw new WorkflowError(422, "Enter a valid email address to send the test to.");
+    const r = await sendTestEmail(d.row, to);   // outside any database transaction: a slow mail server must not hold one open
+    if (r.source !== "NONE") await admin((tx) => tx.q("SELECT admin_record_email_test($1,$2,$3)", [to, r.source, r.error]));
+    if (!r.ok) throw new WorkflowError(502, r.source === "NONE" ? r.error! : `The test email could not be sent. ${r.error}`);
+  });
 }

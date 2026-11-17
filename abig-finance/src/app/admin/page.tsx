@@ -1,22 +1,24 @@
 import Link from "next/link";
 import { Flash } from "@/components";
-import { createCompany, createRole, createUser } from "../admin-actions";
+import { clearEmailSettings, createCompany, createRole, createUser, saveEmailSettings, sendEmailTest } from "../admin-actions";
 import { CompanyPanel, RolePanel, SecretNotice } from "@/components/admin/admin-parts";
 import { TabLinks } from "@/components/layout/tab-links";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table";
 import { PageHeader } from "@/components/ui/page-header";
 import { SidePanel } from "@/components/ui/side-panel";
 import { SubmitButton } from "@/components/ui/submit-button";
-import { activity, companyList, notificationFilters, notificationList, notificationSummary, peopleList, permissionList, roleLimit, roleList, signedInLocked, systemSettings } from "@/lib/admin";
+import { activity, companyList, emailSettings, notificationFilters, notificationList, notificationSummary, peopleList, permissionList, roleLimit, roleList, signedInLocked, systemSettings } from "@/lib/admin";
 import { NotificationMonitor } from "@/components/admin/notifications";
+import { EMAIL_SECURITY } from "@/lib/mail-settings";
 import { withUser } from "@/lib/db";
 import { dtime } from "@/lib/format";
 import { requireAccess } from "@/lib/rbac";
 import { requireMe } from "@/lib/session";
 
-const TABS: [string, string][] = [["users", "People and access"], ["companies", "Companies"], ["roles", "Roles and permissions"], ["activity", "Activity"], ["system", "System"]];
+const TABS: [string, string][] = [["users", "People and access"], ["companies", "Companies"], ["roles", "Roles and permissions"], ["activity", "Activity"], ["email", "Email"], ["system", "System"]];
 /** A person's access can be a long line: on a phone it wraps inside its card. */
 const WRAP = "h-auto max-w-full shrink whitespace-normal";
 const Panel = ({ children }: { children: React.ReactNode }) => <div className="mb-3 rounded-xl border bg-card p-4">{children}</div>;
@@ -75,11 +77,45 @@ async function Activity({ uid }: { uid: string }) {
 
 async function System({ uid, sp }: { uid: string; sp: Record<string, string | undefined> }) {
   const filters = notificationFilters((k) => sp[k]);
-  const d = await withUser(uid, async (tx) => ({ summary: await notificationSummary(tx), rows: await notificationList(tx, filters) }));
+  const d = await withUser(uid, async (tx) => ({ summary: await notificationSummary(tx), rows: await notificationList(tx, filters), email: await emailSettings(tx) }));
   return (<>
-    <Panel><dl className="m-0">{systemSettings().map((s) => <div key={s.label} className="flex justify-between gap-3 border-t py-2 text-sm first:border-t-0"><dt className="text-muted-foreground">{s.label}</dt><dd className="m-0 text-right font-semibold">{s.value}</dd></div>)}</dl></Panel>
-    <p className="mute">These are set where the system is deployed, so they are shown here and not changed here.</p>
+    <Panel><dl className="m-0">{systemSettings(process.env, !!d.email).map((s) => <div key={s.label} className="flex justify-between gap-3 border-t py-2 text-sm first:border-t-0"><dt className="text-muted-foreground">{s.label}</dt><dd className="m-0 text-right font-semibold">{s.value}</dd></div>)}</dl></Panel>
+    <p className="mute">These are set where the system is deployed, so they are shown here and not changed here. Email sending can be set on the <Link href="/admin?tab=email">Email</Link> tab.</p>
     <NotificationMonitor summary={d.summary} rows={d.rows} filters={filters} />
+  </>);
+}
+
+/** The mail server for notifications. Only a system administrator reaches this, and the saved password is never read back: the screen knows only whether there is one. */
+async function Email({ uid }: { uid: string }) {
+  const d = await withUser(uid, async (tx) => ({ s: await emailSettings(tx), mine: (await tx.q<{ email: string }>("SELECT email FROM users WHERE id = app_user_id()"))[0]?.email ?? "" }));
+  const s = d.s, fallback = !!process.env.SMTP_URL;
+  return (<>
+    <Panel>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <h2 className="m-0">Mail server</h2>
+        {s ? <Badge>Using the settings saved here</Badge> : <Badge variant="outline">{fallback ? "Using the deployment settings" : "Nothing saved here"}</Badge>}
+        {s && <Badge variant="outline">{s.password_set ? "Password saved" : "No password"}</Badge>}
+      </div>
+      <p className="mt-0 text-sm text-muted-foreground">{s ? `Last changed by ${s.updated_by_name} on ${dtime(s.updated_at)}. Notifications and test emails both use these settings.` : "While nothing is saved here, notifications keep using the mail settings of the deployment (SMTP_URL and MAIL_FROM), as before."}</p>
+      <form action={saveEmailSettings} className="grid gap-3 sm:grid-cols-2" autoComplete="off">
+        <Field label="SMTP host" name="host" defaultValue={s?.smtp_host ?? ""} required maxLength={253} placeholder="smtp.example.com" />
+        <Field label="SMTP port" name="port" type="number" min={1} max={65535} defaultValue={s?.smtp_port ?? 587} required />
+        <label className="f">Secure connection<select name="security" defaultValue={s?.security ?? "STARTTLS"}>{Object.entries(EMAIL_SECURITY).map(([k, label]) => <option key={k} value={k}>{label}</option>)}</select></label>
+        <label className="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" name="tls_verify" defaultChecked={s?.tls_verify ?? true} />Check the mail server&apos;s certificate (recommended)</label>
+        <Field label="SMTP user name (empty if the server needs none)" name="username" defaultValue={s?.smtp_username ?? ""} maxLength={320} autoComplete="off" />
+        <label className="f">{s?.password_set ? "SMTP password (saved; leave empty to keep it)" : "SMTP password"}<input name="password" type="password" autoComplete="new-password" maxLength={1000} placeholder={s?.password_set ? "A password is saved" : ""} /></label>
+        <Field label="Sender name" name="sender_name" defaultValue={s?.sender_name ?? "ABIG Finance"} required maxLength={100} />
+        <Field label="Sender email address" name="sender_email" type="email" defaultValue={s?.sender_email ?? ""} required maxLength={254} placeholder="no-reply@example.com" />
+        <p className="m-0 text-xs text-muted-foreground sm:col-span-2">The password is encrypted before it is stored and is never shown again, here or anywhere else. Changes are recorded on the Activity tab without the password.</p>
+        <div className="flex flex-wrap gap-2 sm:col-span-2"><SubmitButton>Save email settings</SubmitButton></div>
+      </form>
+      {s && <div className="mt-3 border-t pt-3"><ConfirmDialog title="Remove the saved email settings?" description="The saved mail server and its password are deleted. Notifications go back to the mail settings of the deployment, or are only written to the worker log if it has none." confirmLabel="Remove settings" cancelLabel="Keep them" destructive action={clearEmailSettings} trigger={<Button variant="outline" size="sm">Remove saved settings</Button>} /></div>}
+    </Panel>
+    <Panel>
+      <h2 className="mt-0">Send a test email</h2>
+      <p className="mt-0 text-sm text-muted-foreground">Sends one short message through {s ? "the saved settings" : "the settings in use"} and shows what the mail server answered. Save your changes first: the test uses what is saved.</p>
+      <form action={sendEmailTest} className="flex flex-wrap items-end gap-2"><Field label="Send to" name="to" type="email" defaultValue={d.mine} required maxLength={254} /><SubmitButton variant="outline">Send test email</SubmitButton></form>
+    </Panel>
   </>);
 }
 
@@ -112,6 +148,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<Re
       {tab === "companies" && <Companies uid={me.id} />}
       {tab === "roles" && <Roles uid={me.id} />}
       {tab === "activity" && <Activity uid={me.id} />}
+      {tab === "email" && <Email uid={me.id} />}
       {tab === "system" && <System uid={me.id} sp={sp} />}
     </>
   );
