@@ -52,6 +52,31 @@ export function assertTestServerUrl(raw) {
   return u;
 }
 
+/** Throws unless a URL names an abig_test_* database on the isolated test server (any login). Makes no connection. Used for the preview's database URLs. */
+export function assertPreviewUrl(key, raw) {
+  if (!raw) fail(`${key} is missing from .env.preview (run \`npm run preview:setup\`)`);
+  let u; try { u = new URL(raw); } catch { fail(`${key} in .env.preview is not a valid URL`); }
+  if (!/^postgres(ql)?:$/.test(u.protocol)) fail(`${key} must be a postgresql:// URL`);
+  if (u.hostname !== TEST_PG_HOST) fail(`${key} host is ${u.hostname}, expected ${TEST_PG_HOST}`);
+  if (u.port !== String(TEST_PG_PORT)) fail(`${key} port is ${u.port || "(default)"}, expected ${TEST_PG_PORT}`);
+  assertTestDbName(decodeURIComponent(u.pathname.slice(1)));
+  return u;
+}
+
+/** Where a database variable the preview does not use is pointed: port 1 on this machine, which nothing answers. Never empty: pg would fall back to 5432. */
+export const PREVIEW_NOWHERE = "postgresql://preview-blocked@127.0.0.1:1/preview_blocked";
+/**
+ * The environment the preview's dev server starts with: the caller's, without any database variable, then every one of them pinned (Next.js never lets
+ * .env override a variable that is already set), then the checked preview URLs.
+ */
+export function previewEnv(base, urls) {
+  const env = { ...base };
+  for (const k of Object.keys(env)) if (FORBIDDEN_TEST_ENV.includes(k.toUpperCase())) delete env[k];
+  for (const k of FORBIDDEN_TEST_ENV) env[k] = k.endsWith("_URL") ? PREVIEW_NOWHERE : "";
+  for (const [k, v] of Object.entries(urls)) env[k] = assertPreviewUrl(k, v).toString();
+  return env;
+}
+
 /**
  * Checks, over an open connection, that the server is the isolated test server: its identity marker, port and user, and that it holds no database other than
  * the system ones and abig_test_*. `markerExists(dataDir)` optionally confirms the marker file in the server's data directory. Returns what it found.

@@ -19,7 +19,9 @@
     "db:demo": "psql \"$MIGRATION_DATABASE_URL\" -f prisma/demo.sql",
     "demo:passwords": "node ops/demo-passwords.mjs",
     "bootstrap:admin": "node ops/bootstrap-admin.mjs",
-    "check:integrity": "psql \"$MIGRATION_DATABASE_URL\" -At -F'|' -f ops/verify-integrity.sql"
+    "check:integrity": "psql \"$MIGRATION_DATABASE_URL\" -At -F'|' -f ops/verify-integrity.sql",
+    "preview:setup": "node ops/preview-dev.mjs setup",
+    "preview:dev": "node ops/preview-dev.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.3.1",

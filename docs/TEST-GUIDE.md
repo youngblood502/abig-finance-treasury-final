@@ -87,3 +87,7 @@ It is not a Windows service: it runs under your account while started, and nothi
 2. `TEST_ADMIN_URL` comes from `.env.test` only, overriding anything in the shell, and must be `abig_test_admin` at `127.0.0.1:55432/postgres`. There is no fallback.
 3. One connection proves it is the test server: `abig.instance = 'test'`, port 55432, user `abig_test_admin`, listening on 127.0.0.1 only, PostgreSQL 18, the marker file in its data directory, and no database other than `postgres`, the templates and `abig_test_*`.
 4. Tests create and drop only databases named `abig_test_*` (`^abig_test_[a-z0-9_]+$`), and the ops scripts they start get an explicit environment with nothing inherited.
+
+**Previews on the test server** (`ops/preview-dev.mjs`). A preview, for example in an AI assistant's browser pane, runs the app on the test server, never on the database in `.env`.
+- `npm run preview:setup`: (re)creates `abig_test_preview` on the running test server with every migration and the seed, and writes `.env.preview`.
+- `npm run preview:dev` (what `.claude/launch.json` starts): checks that every database URL in `.env.preview` is `127.0.0.1:55432` and an `abig_test_*` database, proves the server's identity over a connection, pins every other database variable to an address that cannot connect (Next.js never lets `.env` override a variable that is already set), then runs `next dev` on port 3000. Any failure stops it before the app starts.
