@@ -23,11 +23,12 @@ const num = (f: FormData, k: string) => { const v = Number(str(f, k)); if (!Numb
 const dbl = async <T,>(p: Promise<T>) => p.catch(translate);
 
 /** Runs the action, then returns to `back` with a success or error message. */
-async function act(back: string, ok: string, fn: (uid: string) => Promise<unknown>): Promise<never> {
+/** `okLater`, when given, words the success message from what the action found (read after it ran). */
+async function act(back: string, ok: string, fn: (uid: string) => Promise<unknown>, okLater?: () => string): Promise<never> {
   let err: string | null = null;
   try { await fn(await currentUserId()); } catch (e) { err = message(e); }
   revalidatePath("/", "layout");
-  redirect(`${back}${back.includes("?") ? "&" : "?"}${err ? "err=" + encodeURIComponent(err) : "msg=" + encodeURIComponent(ok)}`);
+  redirect(`${back}${back.includes("?") ? "&" : "?"}${err ? "err=" + encodeURIComponent(err) : "msg=" + encodeURIComponent(okLater ? okLater() : ok)}`);
 }
 
 /** Wraps an action so the person's role is checked first (the database checks again; this gives a clear message and stops early). */
@@ -80,7 +81,7 @@ const afterSave = (uid: string, id: string, mode: SaveMode, f: FormData) =>
  */
 const SUPPLIER_DETAIL_METHODS = new Set(["TRANSFER", "TELEBIRR"]);
 const supplierDetail = async (tx: Tx, supplierId: string, method: string) => !SUPPLIER_DETAIL_METHODS.has(method) ? null
-  : (await tx.q<{ id: string }>("SELECT id FROM supplier_bank_details WHERE supplier_id = $1 AND status = 'VERIFIED'", [supplierId]))[0]?.id ?? null;
+  : (await tx.q<{ id: string }>("SELECT id FROM supplier_bank_details WHERE supplier_id = $1 AND status = 'VERIFIED' AND is_active", [supplierId]))[0]?.id ?? null;
 /** A one-time payee's details from the form. The full account number is encrypted here; an empty one means none (or, on an edit, keep the current one). */
 const oneTimeFields = (f: FormData) => {
   const name = str(f, "ot_name"), number = str(f, "ot_account_number");
@@ -223,6 +224,44 @@ async function decideBankDetail(f: FormData, ok: boolean) {
     const n = await tx.q("UPDATE supplier_bank_details SET status = $2, rejection_reason = $3 WHERE id = $1 RETURNING id", [str(f, "id"), ok ? "VERIFIED" : "REJECTED", ok ? null : str(f, "reason")]);
     if (n.length === 0) throw new WorkflowError(403, "You are not allowed to do that.");
   }))));
+}
+/** Takes a version of a supplier's bank details out of use. Nothing on any request changes; the database checks who may and records why. */
+export async function deactivateBankDetail(f: FormData) {
+  return act("/suppliers", "Bank details deactivated. Requests that use them were left as they were and cannot go on to payment until active details are chosen.",
+    guard(["supplier:manage", "payment_request:verify"], (uid) => dbl(withUser(uid, (tx) => tx.q("SELECT supplier_bank_detail_deactivate($1,$2)", [str(f, "id"), str(f, "reason")])))));
+}
+/** Puts deactivated bank details back in use, with the status they had. A Finance Manager only, never the person who entered them. */
+export async function reactivateBankDetail(f: FormData) {
+  return act("/suppliers", "Bank details reactivated.",
+    guard(["payment_request:verify"], (uid) => dbl(withUser(uid, (tx) => tx.q("SELECT supplier_bank_detail_reactivate($1,$2)", [str(f, "id"), str(f, "note")])))));
+}
+
+// ---------- A request whose supplier bank details were deactivated ----------
+/**
+ * Moves a request on to the supplier's active verified details. Reserved or verified: the existing adjustment, which sends it back to verification.
+ * Authenticated (already debited): it is held until another Finance Manager re-verifies and an Owner re-authorizes the new details.
+ */
+export async function useActiveBankDetails(f: FormData) {
+  const id = str(f, "id");
+  let authenticated = false;
+  return act(`/requests/${id}`, "", async (uid) => {
+    if (!/^[0-9a-f-]{36}$/i.test(id)) throw new WorkflowError(404, "Request not found.");
+    // The request's state is read here, as this person (row-level security applies), never taken from the form.
+    const state = (await dbl(withUser(uid, (tx) => tx.q<{ s: string }>("SELECT workflow_state::text AS s FROM payment_requests WHERE id = $1", [id]))))[0]?.s;
+    if (!state) throw new WorkflowError(404, "Request not found.");
+    authenticated = state === "AUTHENTICATED";
+    return guard(authenticated ? ["payment_request:verify"] : ["payment_request:verify", "payment_request:authenticate"], (u) => authenticated
+      ? dbl(withUser(u, (tx) => tx.q("SELECT wf_replace_destination($1,$2,$3,$4)", [id, Number(str(f, "version")), str(f, "detail"), str(f, "reason")])))
+      : runWorkflow(u, id, "adjust", { version: Number(str(f, "version")), reason: str(f, "reason"), changes: { supplier_bank_detail_id: str(f, "detail") } }))(uid);
+  }, () => authenticated ? "New bank details chosen. Another Finance Manager must verify them, then an Owner authorize them, before the payment is sent." : "New bank details chosen. The request goes back to verification.");
+}
+export async function reverifyDestination(f: FormData) {
+  const id = str(f, "id");
+  return act(`/requests/${id}`, "New bank details verified. An Owner must now authorize them.", guard(["payment_request:verify"], (uid) => dbl(withUser(uid, (tx) => tx.q("SELECT wf_reverify_destination($1,$2)", [id, Number(str(f, "version"))])))));
+}
+export async function reauthorizeDestination(f: FormData) {
+  const id = str(f, "id");
+  return act(`/requests/${id}`, "New bank details authorized. The payment can be sent to them.", guard(["payment_request:authenticate"], (uid) => dbl(withUser(uid, (tx) => tx.q("SELECT wf_reauthorize_destination($1,$2)", [id, Number(str(f, "version"))])))));
 }
 
 // ---------- Editing a draft ----------

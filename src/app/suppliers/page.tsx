@@ -1,4 +1,4 @@
-import { addBankDetail, addSupplier, linkSupplier, rejectBankDetail, updateSupplier, verifyBankDetail } from "../actions";
+import { addBankDetail, addSupplier, deactivateBankDetail, linkSupplier, reactivateBankDetail, rejectBankDetail, updateSupplier, verifyBankDetail } from "../actions";
 import { AccountNumber } from "@/components/ui/reveal-number";
 import { Flash } from "@/components";
 import { PaymentHistory, PayeeTabs, Section, VersionList } from "@/components/payees/payee-parts";
@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { SidePanel } from "@/components/ui/side-panel";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { companyScope } from "@/lib/company-scope";
+import { dtime } from "@/lib/format";
 import { withUser } from "@/lib/db";
 import { canChangeSupplierStatus, LIST_FILTERS, listFilters, supplierList, verifiedVersion, type SupplierRow } from "@/lib/payee-screens";
 import { can, canAccess, requireAccess } from "@/lib/rbac";
@@ -25,13 +26,21 @@ function SupplierPanel({ s, userId, canVerify, canEdit, canSetStatus, entering }
   return (
     <SidePanel title={s.legal_name} description={[s.tin ? `TIN ${s.tin}` : "No TIN recorded", s.phone ?? "no phone recorded"].join(", ")} trigger={<Button variant="outline" size="sm">Details</Button>}>
       <Section title="Bank details">
-        <VersionList userId={userId} canVerify={canVerify} verify={verifyBankDetail} reject={rejectBankDetail} versions={s.versions.map((v) => ({ ...v, label: `${v.bank_name} ••••${v.account_last4}`, display: <>{v.bank_name} <AccountNumber kind="supplier" id={v.id} last4={v.account_last4} state={v.number_state} /></> }))} />
+        <VersionList userId={userId} canVerify={canVerify} verify={verifyBankDetail} reject={rejectBankDetail}
+          activation={{ canDeactivate: canEdit || canVerify, canReactivate: canVerify, deactivate: deactivateBankDetail, reactivate: reactivateBankDetail }} versions={s.versions.map((v) => ({ ...v, label: `${v.bank_name} ••••${v.account_last4}`, display: <>{v.bank_name} <AccountNumber kind="supplier" id={v.id} last4={v.account_last4} state={v.number_state} /></> }))} />
         {canEdit && (
           <form action={addBankDetail} className="mt-3 flex flex-col gap-3 border-t pt-3"><input type="hidden" name="supplier" value={s.id} />
             <label className="f">Bank<input name="bank" required /></label><label className="f">Full account number<input name="account_number" required minLength={6} maxLength={40} inputMode="numeric" autoComplete="off" spellCheck={false} /><span className="text-xs font-normal text-muted-foreground">Encrypted when saved. Lists show only the last 4 digits.</span></label>
             <div><SubmitButton variant="outline">Enter for verification</SubmitButton></div></form>
         )}
       </Section>
+      {s.statusEvents.length > 0 && (
+        <Section title="Bank details status history">
+          <ul className="m-0 list-none p-0">{s.statusEvents.map((e, i) => (
+            <li key={i} className="border-t py-2 text-sm first:border-t-0"><b>Version {e.version} {e.action === "DEACTIVATED" ? "deactivated" : "reactivated"}</b> by {e.actor}, {dtime(e.occurred_at)}<br /><span className="text-muted-foreground">{e.reason}</span></li>
+          ))}</ul>
+        </Section>
+      )}
       <Section title="Your companies that use this supplier">
         {s.links.length === 0 ? <p className="m-0 text-sm text-muted-foreground">None of your companies use this supplier yet.</p> : <ul className="m-0 flex list-none flex-wrap gap-1 p-0">{s.links.map((l) => <li key={l.company_id}><Badge variant="outline">{l.company}{l.status === "ACTIVE" ? "" : ` (${l.status.toLowerCase()})`}</Badge></li>)}</ul>}
         {canEdit && linkable.length > 0 && (
@@ -65,7 +74,7 @@ export default async function Suppliers({ searchParams }: { searchParams: Promis
       id: s.id, search: `${s.legal_name} ${s.tin ?? ""} ${s.phone ?? ""}`, filters: listFilters(s.is_active, s.versions), sort: { name: s.legal_name, tin: s.tin ?? "" },
       cells: {
         name: <><b>{s.legal_name}</b>{!s.is_active && <Badge variant="destructive" className="ml-2">Inactive</Badge>}</>, tin: s.tin ?? <span className="text-muted-foreground">None</span>, phone: s.phone ?? <span className="text-muted-foreground">None</span>, companies: s.links.length > 0 ? s.links.map((l) => l.company).join(", ") : "None",
-        bank: <>{verified ? <>{verified.bank_name} <AccountNumber kind="supplier" id={verified.id} last4={verified.account_last4} state={verified.number_state} /></> : <span className="text-muted-foreground">None (cash or cheque only)</span>}{waiting && <Badge variant="warning" className="ml-2">To verify</Badge>}</>, open: <SupplierPanel s={s} userId={me.id} canVerify={canVerify} canEdit={canEdit} canSetStatus={canSetStatus} entering={entering} />,
+        bank: <>{verified ? <>{verified.bank_name} <AccountNumber kind="supplier" id={verified.id} last4={verified.account_last4} state={verified.number_state} />{!verified.is_active && <Badge variant="destructive" className="ml-2">Deactivated</Badge>}</> : <span className="text-muted-foreground">None (cash or cheque only)</span>}{waiting && <Badge variant="warning" className="ml-2">To verify</Badge>}</>, open: <SupplierPanel s={s} userId={me.id} canVerify={canVerify} canEdit={canEdit} canSetStatus={canSetStatus} entering={entering} />,
       },
     };
   });

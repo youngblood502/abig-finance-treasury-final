@@ -10,9 +10,11 @@ import { PERSON_DETAIL_FOR_METHOD } from "./payees";
 // `company` is the company switcher's choice and can only narrow a list.
 
 export interface PaymentLine { payee_id: string; id: string; request_no: string; company: string; workflow_state: string; total_amount: string; created_at: Date }
-export interface SupplierVersion { id: string; supplier_id: string; version: number; bank_name: string; account_last4: string; number_state: NumberState; status: string; created_by: string; rejection_reason: string | null }
+export interface SupplierVersion { id: string; supplier_id: string; version: number; bank_name: string; account_last4: string; number_state: NumberState; status: string; created_by: string; rejection_reason: string | null; is_active: boolean; deactivation_reason: string | null; deactivated_at: Date | null }
+/** One deactivation or reactivation of a version of a supplier's bank details. */
+export interface SupplierDetailEvent { supplier_id: string; version: number; action: string; reason: string; actor: string; occurred_at: Date }
 export interface SupplierLink { supplier_id: string; company_id: string; company: string; status: string }
-export interface SupplierRow { id: string; legal_name: string; tin: string | null; phone: string | null; is_active: boolean; links: SupplierLink[]; versions: SupplierVersion[]; history: PaymentLine[] }
+export interface SupplierRow { id: string; legal_name: string; tin: string | null; phone: string | null; is_active: boolean; links: SupplierLink[]; versions: SupplierVersion[]; statusEvents: SupplierDetailEvent[]; history: PaymentLine[] }
 
 const history = (tx: Tx, column: "supplier_id" | "person_payee_id", ids: string[], company: string | null) => tx.q<PaymentLine>(
   `SELECT payee_id, id, request_no, company, workflow_state, total_amount, created_at FROM (
@@ -24,10 +26,13 @@ const history = (tx: Tx, column: "supplier_id" | "person_payee_id", ids: string[
 export const supplierList = async (tx: Tx, company: string | null) => {
   const suppliers = await tx.q<Pick<SupplierRow, "id" | "legal_name" | "tin" | "phone" | "is_active">>("SELECT id, legal_name, tin, phone, is_active FROM suppliers WHERE $1::uuid IS NULL OR id IN (SELECT supplier_id FROM company_suppliers WHERE company_id = $1) ORDER BY legal_name", [company]);
   const ids = suppliers.map((s) => s.id);
-  const versions = await tx.q<SupplierVersion>("SELECT id, supplier_id, version, bank_name, account_last4, supplier_account_state(id) AS number_state, status, created_by, rejection_reason FROM supplier_bank_details WHERE supplier_id = ANY($1::uuid[]) ORDER BY supplier_id, version DESC", [ids]);
+  const versions = await tx.q<SupplierVersion>("SELECT id, supplier_id, version, bank_name, account_last4, supplier_account_state(id) AS number_state, status, created_by, rejection_reason, is_active, deactivation_reason, deactivated_at FROM supplier_bank_details WHERE supplier_id = ANY($1::uuid[]) ORDER BY supplier_id, version DESC", [ids]);
+  const statusEvents = await tx.q<SupplierDetailEvent>(
+    `SELECT e.supplier_id, d.version, e.action, e.reason, u.full_name AS actor, e.occurred_at FROM supplier_bank_detail_status_events e
+       JOIN supplier_bank_details d ON d.id = e.detail_id JOIN users u ON u.id = e.actor_id WHERE e.supplier_id = ANY($1::uuid[]) ORDER BY e.occurred_at DESC, e.id`, [ids]);
   const links = await tx.q<SupplierLink>("SELECT cs.supplier_id, cs.company_id, c.legal_name AS company, cs.status FROM company_suppliers cs JOIN companies c ON c.id = cs.company_id WHERE cs.supplier_id = ANY($1::uuid[]) ORDER BY c.legal_name", [ids]);
   const paid = await history(tx, "supplier_id", ids, company);
-  return suppliers.map((s): SupplierRow => ({ ...s, links: links.filter((l) => l.supplier_id === s.id), versions: versions.filter((v) => v.supplier_id === s.id), history: paid.filter((p) => p.payee_id === s.id) }));
+  return suppliers.map((s): SupplierRow => ({ ...s, links: links.filter((l) => l.supplier_id === s.id), versions: versions.filter((v) => v.supplier_id === s.id), statusEvents: statusEvents.filter((e) => e.supplier_id === s.id), history: paid.filter((p) => p.payee_id === s.id) }));
 };
 
 /** Whether this person may change a supplier's status: the same question supplier_update() asks, put to the database so the two cannot disagree. Name and TIN need supplier:manage. */

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AccountNumber, AccountPlaceNumber } from "@/components/ui/reveal-number";
 import { notFound } from "next/navigation";
 import { Flash } from "@/components";
-import { recordExecution, workflowAction, confirmRequestAmount } from "../../actions";
+import { recordExecution, workflowAction, confirmRequestAmount, reauthorizeDestination, reverifyDestination, useActiveBankDetails } from "../../actions";
 import { AdjustForm } from "@/components/requests/adjust-form";
 import { ReviewActions } from "@/components/requests/review-actions";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +24,14 @@ import { currentUserId, hasPermission, requireMe } from "@/lib/session";
 
 const Card = ({ title, children }: { title: string; children: React.ReactNode }) => <section className="mb-3 rounded-xl border bg-card p-4"><h2 className="mt-0">{title}</h2>{children}</section>;
 const Fact = ({ label, children }: { label: string; children: React.ReactNode }) => <div className="min-w-0"><dt className="text-xs font-semibold text-muted-foreground">{label}</dt><dd className="m-0 text-sm break-words">{children}</dd></div>;
+/** What happens to an open request whose supplier bank details were deactivated, by state. Paid, rejected and cancelled requests keep them as they were. */
+const DEACTIVATED_DETAILS_NOTE: Record<string, string> = {
+  DRAFT: "It cannot be submitted with them. Editing and saving the draft takes the supplier's active verified details.",
+  SCHEDULED: "It is not submitted on its date with them. Change it, save the draft to take the supplier's active verified details, and schedule it again.",
+  RESERVED: "It cannot be verified with them. A Finance Manager can move it to the supplier's active verified details; it is then verified and authorized again.",
+  VERIFIED: "It cannot be authorized with them. An Owner can move it to the supplier's active verified details; it then goes back to verification.",
+  AUTHENTICATED: "The amount is debited, but the payment cannot be sent to them. A Finance Manager chooses the supplier's active verified details, another Finance Manager verifies them and an Owner authorizes them.",
+};
 const INSTALLMENTS: DataColumn[] = [{ key: "seq", header: "Installment", primary: true }, { key: "due", header: "Due" }, { key: "amount", header: "Amount", align: "right" }];
 
 export default async function RequestDetail({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | undefined>> }) {
@@ -85,7 +93,7 @@ export default async function RequestDetail({ params, searchParams }: { params: 
                 <label className="f">Reason<textarea name="reason" rows={3} required minLength={3} /></label></ConfirmDialog>}
             </div>
           )}
-          {can.record && (
+          {can.record && !r.destination_review && (r.bank_active !== false || r.cheque_no || r.bank_reference || r.bank_processed_at) && (
             <form action={recordExecution} className="mt-2 grid items-end gap-3 md:grid-cols-3"><input type="hidden" name="id" value={id} />
               {r.payment_method === "CHEQUE" && <label className="f">Cheque number (optional)<input name="cheque_no" maxLength={64} defaultValue={r.cheque_no ?? ""} /></label>}
               <label className="f">Bank reference (optional)<input name="bank_reference" maxLength={128} defaultValue={r.bank_reference ?? ""} /></label>
@@ -103,6 +111,29 @@ export default async function RequestDetail({ params, searchParams }: { params: 
       {r.debit_active === false && INACTIVE_ACCOUNT_NOTE[r.workflow_state] && (
         <div role="alert" className="note bad mb-3">
           <b>The debit account {r.debit_label} is inactive</b>{r.debit_deactivated_at ? ` since ${dtime(r.debit_deactivated_at)}` : ""}{r.debit_deactivation_reason ? ` (${DEACTIVATION_REASONS[r.debit_deactivation_reason] ?? r.debit_deactivation_reason})` : ""}. {INACTIVE_ACCOUNT_NOTE[r.workflow_state]}
+        </div>
+      )}
+      {r.destination_review && r.workflow_state === "AUTHENTICATED" && (
+        <div role="alert" className="note bad mb-3">
+          <b>New supplier bank details wait to be {r.destination_review === "REVERIFY" ? "verified by a Finance Manager" : "authorized by an Owner"}.</b> The payment cannot be sent until then; the debit stays as it is.
+          {r.destination_review === "REVERIFY" && !mine && hasPermission(me, "payment_request:verify", r.debtor_company_id) && (
+            <div className="mt-2"><ConfirmDialog title="Verify the new bank details?" description={`${r.bank_name} ••••${r.account_last4}. An Owner authorizes them next. The Finance Manager who chose them cannot verify them.`} confirmLabel="Verify" cancelLabel="Not yet" action={reverifyDestination} fields={{ id, version: String(r.version) }} trigger={<Button size="sm">Verify the new details</Button>} /></div>
+          )}
+          {r.destination_review === "REAUTHORIZE" && !mine && hasPermission(me, "payment_request:authenticate", r.debtor_company_id) && (
+            <div className="mt-2"><ConfirmDialog title="Authorize the new bank details?" description={`${r.bank_name} ••••${r.account_last4}. The payment can then be sent to them.`} confirmLabel="Authorize" cancelLabel="Not yet" action={reauthorizeDestination} fields={{ id, version: String(r.version) }} trigger={<Button size="sm">Authorize the new details</Button>} /></div>
+          )}
+        </div>
+      )}
+      {r.payee_type === "SUPPLIER" && r.supplier_bank_detail_id && r.bank_active === false && !r.destination_review && DEACTIVATED_DETAILS_NOTE[r.workflow_state] && !(r.workflow_state === "AUTHENTICATED" && (r.cheque_no || r.bank_reference || r.bank_processed_at)) && (
+        <div role="alert" className="note bad mb-3">
+          <b>The supplier bank details on this request ({r.bank_name} ••••{r.account_last4}) were deactivated</b>{r.bank_deactivation_reason ? `: ${r.bank_deactivation_reason}` : ""}. They stay on the request and in its history. {DEACTIVATED_DETAILS_NOTE[r.workflow_state]}
+          {!r.alt_detail_id && <div className="mt-1">The supplier has no active verified bank details. New ones can be entered on the Suppliers page; someone else must verify them before they can be chosen here.</div>}
+          {r.alt_detail_id && ((holds && can.adjust) || (r.workflow_state === "AUTHENTICATED" && !mine && hasPermission(me, "payment_request:verify", r.debtor_company_id))) && (
+            <div className="mt-2"><ConfirmDialog title={`Pay to ${r.alt_bank} ••••${r.alt_last4}?`} description={r.workflow_state === "AUTHENTICATED" ? "The supplier's active verified details. The debit stays as it is; another Finance Manager must verify them, then an Owner authorize them, before the payment is sent." : "The supplier's active verified details. The request goes back to verification, and is verified and authorized again."}
+              confirmLabel="Use these details" cancelLabel="Not now" action={useActiveBankDetails} fields={{ id, version: String(r.version), detail: r.alt_detail_id }} trigger={<Button size="sm">Use the supplier&apos;s active details</Button>}>
+              <label className="f">Reason (required)<textarea name="reason" rows={2} required minLength={3} /></label>
+            </ConfirmDialog></div>
+          )}
         </div>
       )}
       {r.workflow_state === "SCHEDULED" && (
