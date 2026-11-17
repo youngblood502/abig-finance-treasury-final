@@ -1,0 +1,176 @@
+import Link from "next/link";
+import { AccountNumber, AccountPlaceNumber } from "@/components/ui/reveal-number";
+import { notFound } from "next/navigation";
+import { Flash } from "@/components";
+import { recordExecution, workflowAction, confirmRequestAmount, reauthorizeDestination, reverifyDestination, useActiveBankDetails } from "../../actions";
+import { AdjustForm } from "@/components/requests/adjust-form";
+import { ReviewActions } from "@/components/requests/review-actions";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table";
+import { PageHeader } from "@/components/ui/page-header";
+import { SidePanel } from "@/components/ui/side-panel";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { StatusTracker } from "@/components/ui/status-tracker";
+import { SubmitButton } from "@/components/ui/submit-button";
+import { Timeline } from "@/components/ui/timeline";
+import { withUser } from "@/lib/db";
+import { DEACTIVATION_REASONS, dstr, dtime, etb, INACTIVE_ACCOUNT_NOTE, PAYMENT_METHODS } from "@/lib/format";
+import { maskId, revealIdNumber } from "@/lib/payees";
+import { requireAccess } from "@/lib/rbac";
+import { loadRequest, requestActions, requestHistory, stopReason } from "@/lib/requests";
+import { currentUserId, hasPermission, requireMe } from "@/lib/session";
+
+const Card = ({ title, children }: { title: string; children: React.ReactNode }) => <section className="mb-3 rounded-xl border bg-card p-4"><h2 className="mt-0">{title}</h2>{children}</section>;
+const Fact = ({ label, children }: { label: string; children: React.ReactNode }) => <div className="min-w-0"><dt className="text-xs font-semibold text-muted-foreground">{label}</dt><dd className="m-0 text-sm break-words">{children}</dd></div>;
+/** What happens to an open request whose supplier bank details were deactivated, by state. Paid, rejected and cancelled requests keep them as they were. */
+const DEACTIVATED_DETAILS_NOTE: Record<string, string> = {
+  DRAFT: "It cannot be submitted with them. Editing and saving the draft takes the supplier's active verified details.",
+  SCHEDULED: "It is not submitted on its date with them. Change it, save the draft to take the supplier's active verified details, and schedule it again.",
+  RESERVED: "It cannot be verified with them. A Finance Manager can move it to the supplier's active verified details; it is then verified and authorized again.",
+  VERIFIED: "It cannot be authorized with them. An Owner can move it to the supplier's active verified details; it then goes back to verification.",
+  AUTHENTICATED: "The amount is debited, but the payment cannot be sent to them. A Finance Manager chooses the supplier's active verified details, another Finance Manager verifies them and an Owner authorizes them.",
+};
+const INSTALLMENTS: DataColumn[] = [{ key: "seq", header: "Installment", primary: true }, { key: "due", header: "Due" }, { key: "amount", header: "Amount", align: "right" }];
+
+export default async function RequestDetail({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | undefined>> }) {
+  const { id } = await params; const sp = await searchParams;
+  if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
+  const uid = await currentUserId(); const me = await requireMe();
+  requireAccess(me, "/requests");
+  // Row-level security decides whether this request can be read. Another company's request is simply not found.
+  const d = await withUser(uid, async (tx) => {
+    const found = await loadRequest(tx, id);
+    if (!found) return null;
+    const enc = found.r.person_payee_id && !found.restricted ? (await tx.q<{ v: string | null }>("SELECT reveal_person_id($1) AS v", [id]))[0].v : null;   // logged; empty if this person may not see it
+    return { ...found, fullId: enc ? revealIdNumber(enc) : null };
+  });
+  if (!d) notFound();
+  const { r } = d, mine = r.created_by === me.id;
+  const can = requestActions(r.workflow_state, mine, d.stage, hasPermission(me, "payment_request:create", r.debtor_company_id));
+  const holds = r.workflow_state === "RESERVED" || r.workflow_state === "VERIFIED";
+  const stopped = stopReason(r.workflow_state, d.approvals);
+  const field = (action: string) => ({ id, version: String(r.version), action });
+  const canDoSomething = Object.values(can).some(Boolean);
+  const instRows: DataRow[] = d.installments.map((i) => ({ id: String(i.seq), cells: { seq: i.seq, due: dstr(i.due_date), amount: etb(i.amount) } }));
+  const oneTime = r.payee_type === "ONE_TIME";
+  const payTo = oneTime ? (r.payment_method === "TELEBIRR" ? (r.ot_phone ? `Telebirr ${r.ot_phone}` : "Not set")
+      : r.ot_bank ? <>{r.ot_bank} <AccountNumber kind="one_time" id={r.one_time_payee_id} last4={r.ot_last4} state={r.ot_number_state} /></> : r.payment_method === "TRANSFER" ? "Not set" : "Not needed for this method")
+    : r.person_kind === "TELEBIRR" ? `Telebirr ${r.telebirr_phone}`
+    : r.person_kind === "BANK" ? <>{r.person_bank} <AccountNumber kind="person" id={r.person_payment_detail_id} last4={r.person_last4} state={r.person_number_state} /></>
+    : r.bank_name ? <>{r.bank_name} <AccountNumber kind="supplier" id={r.supplier_bank_detail_id} last4={r.account_last4} state={r.bank_number_state} /></>
+    : r.payment_method === "CASH" || r.payment_method === "CHEQUE" ? "Not needed for this method" : "Not set";
+  return (
+    <>
+      <p className="mute mb-2"><Link href={d.stage ? "/approvals" : "/requests"}>{d.stage ? "Approvals" : "Payment requests"}</Link> / {r.request_no}</p>
+      <PageHeader title={`${r.request_no}: ${r.payee ?? (d.restricted ? "Payee not shown" : "No payee")}`} description={`${r.company}, entered by ${r.creator_name ?? "someone at the company"}`} action={<StatusBadge state={r.workflow_state} />} />
+      <Flash sp={sp} />
+      {stopped && (
+        <div role="status" className="mb-3 rounded-xl border border-warning bg-warning-soft p-4 text-sm text-foreground">
+          <b>{stopped.title}</b><div>{stopped.reason}</div><div className="text-xs text-muted-foreground">{stopped.who}, {dtime(stopped.when)}</div>
+        </div>
+      )}
+      <section className="mb-3 rounded-xl border bg-card p-4"><StatusTracker state={r.workflow_state} /></section>
+
+      {canDoSomething && (
+        <Card title="What you can do">
+          {d.stage && <ReviewActions stage={d.stage} target={{ id, requestNo: r.request_no, version: r.version, amount: r.total_amount, current: r.debit_current, reserved: r.debit_reserved }} />}
+          {can.adjust && (
+            <div className="mt-2">
+              <SidePanel title={`Adjust ${r.request_no}`} description="Corrections made during review." trigger={<Button variant="outline">Adjust this request</Button>}>
+                <AdjustForm id={id} version={r.version} priority={r.priority} invoiceRef={r.invoice_ref ?? ""} description={r.description ?? ""} totalAmount={Number(r.total_amount)}
+                  installments={d.installments.map((i) => ({ seq: i.seq, dueDate: dstr(i.due_date), amount: Number(i.amount) }))} />
+              </SidePanel>
+            </div>
+          )}
+          {(can.edit || can.cancel) && (
+            <div className="flex flex-wrap gap-2">
+              {can.edit && <Button asChild variant="outline"><Link href={`/requests/${id}/edit`}>Edit request</Link></Button>}
+              {can.submit && <ConfirmDialog title={`Submit ${r.request_no}?`} description="This reserves the amount on the debit account, so it cannot be used twice. A Finance Manager verifies it next." confirmLabel="Submit and reserve funds"
+                effect={[{ label: "To reserve", value: etb(r.total_amount) }, { label: "Available on the account", value: etb(r.debit_available) }]} action={workflowAction} fields={field("submit")} trigger={<Button>Submit and reserve funds</Button>} />}
+              {can.cancel && <ConfirmDialog title={`Cancel ${r.request_no}?`} description="This is final. Any reserved funds are released." confirmLabel="Cancel my request" cancelLabel="Keep it" destructive action={workflowAction} fields={field("cancel")} trigger={<Button variant="destructive">Cancel my request</Button>}>
+                <label className="f">Reason<textarea name="reason" rows={3} required minLength={3} /></label></ConfirmDialog>}
+            </div>
+          )}
+          {can.record && !r.destination_review && (r.bank_active !== false || r.cheque_no || r.bank_reference || r.bank_processed_at) && (
+            <form action={recordExecution} className="mt-2 grid items-end gap-3 md:grid-cols-3"><input type="hidden" name="id" value={id} />
+              {r.payment_method === "CHEQUE" && <label className="f">Cheque number (optional)<input name="cheque_no" maxLength={64} defaultValue={r.cheque_no ?? ""} /></label>}
+              <label className="f">Bank reference (optional)<input name="bank_reference" maxLength={128} defaultValue={r.bank_reference ?? ""} /></label>
+              <div><SubmitButton variant="outline">Save payment details</SubmitButton></div></form>
+          )}
+        </Card>
+      )}
+      {r.workflow_state === "AUTHENTICATED" && <p className="mute">The account has been debited. This payment stays Authenticated until reconciliation finds it on the bank statement, and it can no longer be cancelled.</p>}
+      {r.amount_is_estimate && !r.amount_confirmed_at && (
+        <div role="alert" className="note mb-3">
+          <b>The amount is an estimate</b> from a recurring payment. Check it, correct it if needed by editing the draft, then confirm it. It cannot be submitted or scheduled until it is confirmed.
+          {mine && r.workflow_state === "DRAFT" && <div className="mt-2"><ConfirmDialog title={`Confirm ${etb(r.total_amount)}?`} description="This confirms the amount for this request. You can still change the draft before you submit it." confirmLabel="Confirm the amount" cancelLabel="Not yet" action={confirmRequestAmount} fields={{ id }} trigger={<Button size="sm">Confirm the amount</Button>} /></div>}
+        </div>
+      )}
+      {r.debit_active === false && INACTIVE_ACCOUNT_NOTE[r.workflow_state] && (
+        <div role="alert" className="note bad mb-3">
+          <b>The debit account {r.debit_label} is inactive</b>{r.debit_deactivated_at ? ` since ${dtime(r.debit_deactivated_at)}` : ""}{r.debit_deactivation_reason ? ` (${DEACTIVATION_REASONS[r.debit_deactivation_reason] ?? r.debit_deactivation_reason})` : ""}. {INACTIVE_ACCOUNT_NOTE[r.workflow_state]}
+        </div>
+      )}
+      {r.destination_review && r.workflow_state === "AUTHENTICATED" && (
+        <div role="alert" className="note bad mb-3">
+          <b>New supplier bank details wait to be {r.destination_review === "REVERIFY" ? "verified by a Finance Manager" : "authorized by an Owner"}.</b> The payment cannot be sent until then; the debit stays as it is.
+          {r.destination_review === "REVERIFY" && !mine && hasPermission(me, "payment_request:verify", r.debtor_company_id) && (
+            <div className="mt-2"><ConfirmDialog title="Verify the new bank details?" description={`${r.bank_name} ••••${r.account_last4}. An Owner authorizes them next. The Finance Manager who chose them cannot verify them.`} confirmLabel="Verify" cancelLabel="Not yet" action={reverifyDestination} fields={{ id, version: String(r.version) }} trigger={<Button size="sm">Verify the new details</Button>} /></div>
+          )}
+          {r.destination_review === "REAUTHORIZE" && !mine && hasPermission(me, "payment_request:authenticate", r.debtor_company_id) && (
+            <div className="mt-2"><ConfirmDialog title="Authorize the new bank details?" description={`${r.bank_name} ••••${r.account_last4}. The payment can then be sent to them.`} confirmLabel="Authorize" cancelLabel="Not yet" action={reauthorizeDestination} fields={{ id, version: String(r.version) }} trigger={<Button size="sm">Authorize the new details</Button>} /></div>
+          )}
+        </div>
+      )}
+      {r.payee_type === "SUPPLIER" && r.supplier_bank_detail_id && r.bank_active === false && !r.destination_review && DEACTIVATED_DETAILS_NOTE[r.workflow_state] && !(r.workflow_state === "AUTHENTICATED" && (r.cheque_no || r.bank_reference || r.bank_processed_at)) && (
+        <div role="alert" className="note bad mb-3">
+          <b>The supplier bank details on this request ({r.bank_name} ••••{r.account_last4}) were deactivated</b>{r.bank_deactivation_reason ? `: ${r.bank_deactivation_reason}` : ""}. They stay on the request and in its history. {DEACTIVATED_DETAILS_NOTE[r.workflow_state]}
+          {!r.alt_detail_id && <div className="mt-1">The supplier has no active verified bank details. New ones can be entered on the Suppliers page; someone else must verify them before they can be chosen here.</div>}
+          {r.alt_detail_id && ((holds && can.adjust) || (r.workflow_state === "AUTHENTICATED" && !mine && hasPermission(me, "payment_request:verify", r.debtor_company_id))) && (
+            <div className="mt-2"><ConfirmDialog title={`Pay to ${r.alt_bank} ••••${r.alt_last4}?`} description={r.workflow_state === "AUTHENTICATED" ? "The supplier's active verified details. The debit stays as it is; another Finance Manager must verify them, then an Owner authorize them, before the payment is sent." : "The supplier's active verified details. The request goes back to verification, and is verified and authorized again."}
+              confirmLabel="Use these details" cancelLabel="Not now" action={useActiveBankDetails} fields={{ id, version: String(r.version), detail: r.alt_detail_id }} trigger={<Button size="sm">Use the supplier&apos;s active details</Button>}>
+              <label className="f">Reason (required)<textarea name="reason" rows={2} required minLength={3} /></label>
+            </ConfirmDialog></div>
+          )}
+        </div>
+      )}
+      {r.workflow_state === "SCHEDULED" && (
+        <div role={r.schedule_error ? "alert" : "status"} className={`note mb-3 ${r.schedule_error ? "bad" : ""}`}>
+          <b>Scheduled for {dstr(r.scheduled_for)}.</b> It is submitted for verification automatically on that date, and the amount is reserved then. Nothing is reserved now.
+          {r.schedule_error && <div className="mt-1">Not submitted yet{r.schedule_error_at ? ` (last tried ${dtime(r.schedule_error_at)})` : ""}: {r.schedule_error} It is tried again automatically; its creator can change it or cancel it.</div>}
+        </div>
+      )}
+      {mine && r.workflow_state === "RESERVED" && <p className="mute">The funds are reserved and it is waiting for a Finance Manager. You cannot approve your own request.</p>}
+
+      {d.restricted && <p className="mute">With group reporting you see this request's amount, account, dates and status. Who is paid, the invoice and its documents, and who handled it show only to the company's members.</p>}
+      <Card title="Details">
+        <dl className="m-0 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <Fact label="Total"><b>{etb(r.total_amount)}</b>{r.amount_is_estimate && <Badge variant={r.amount_confirmed_at ? "outline" : "warning"} className="ml-2">{r.amount_confirmed_at ? "Estimate confirmed" : "Estimate"}</Badge>}</Fact>
+          {r.recurring_occurrence && <Fact label="Recurring payment">{r.recurring_name ? <Link href="/recurring">{r.recurring_name}</Link> : "A recurring payment"}<div className="text-xs text-muted-foreground">Created for {dstr(r.recurring_occurrence)}</div></Fact>}
+          {d.restricted ? null : r.supplier_id ? <Fact label="Supplier">{r.payee}{(r.tin || r.supplier_phone) && <div className="text-xs text-muted-foreground">{[r.tin && `TIN ${r.tin}`, r.supplier_phone].filter(Boolean).join(", ")}</div>}</Fact>
+            : oneTime ? <Fact label="One-time payee">{r.payee} <Badge variant="outline">Not registered</Badge><div className="text-xs text-muted-foreground">{r.ot_phone ?? "No phone recorded"}. Entered on this request; no supplier or person record.</div></Fact>
+            : <Fact label="Person">{r.payee}<div className="text-xs text-muted-foreground">{r.person_phone ? `${r.person_phone}, ` : ""}ID {d.fullId ?? maskId(r.id_last4 ?? "")}</div></Fact>}
+          {!d.restricted && <Fact label="Pays to">{payTo} {(r.bank_status ?? r.person_detail_status ?? "VERIFIED") !== "VERIFIED" && <Badge variant="destructive">Not verified</Badge>}</Fact>}
+          <Fact label="Debit account">{r.debit_label && r.debit_account_id ? <>{r.debit_label} · <AccountPlaceNumber a={{ id: r.debit_account_id, account_kind: r.account_kind ?? undefined, bank_name: r.debit_bank, account_last4: r.debit_last4, wallet_phone: r.wallet_phone, number_state: r.debit_number_state }} /></> : "Not chosen"} {holds && <Badge variant="secondary">Funds reserved</Badge>}</Fact>
+          <Fact label="Payment method">{PAYMENT_METHODS[r.payment_method] ?? r.payment_method}</Fact>
+          <Fact label="Priority">{r.priority.toLowerCase()}</Fact>
+          {!d.restricted && <Fact label="Invoice">{r.invoice_ref ?? "None"}{r.invoice_date ? `, ${dstr(r.invoice_date)}` : ""} {d.files.length === 0 && <Badge variant="warning">No document</Badge>}</Fact>}
+          {r.cheque_no && <Fact label="Cheque number">{r.cheque_no}</Fact>}
+          {r.bank_reference && <Fact label="Bank reference">{r.bank_reference}</Fact>}
+          {r.paid_at && <Fact label="Paid">{dtime(r.paid_at)}</Fact>}
+          {r.description && <Fact label="Notes">{r.description}</Fact>}
+        </dl>
+      </Card>
+
+      <Card title="Installments"><DataTable caption="Installments" columns={INSTALLMENTS} rows={instRows} /></Card>
+      {!d.restricted && (
+        <Card title="Documents">
+          {d.files.length === 0 ? <p className="m-0 text-sm text-muted-foreground">No files.</p> : <ul className="m-0 list-none p-0">{d.files.map((f) => <li key={f.id} className="text-sm"><a href={`/api/attachments/${f.id}`}>{f.filename}</a> <span className="text-muted-foreground">{f.kind.toLowerCase()}, {dtime(f.uploaded_at)}{f.replaced ? ", replaced" : ""}</span></li>)}</ul>}
+        </Card>
+      )}
+      <Card title="History"><Timeline entries={requestHistory(d.approvals, d.adjustments)} /></Card>
+    </>
+  );
+}
