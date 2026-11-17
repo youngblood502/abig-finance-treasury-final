@@ -57,20 +57,37 @@ export function verifyTotp(secret: string, code: string, lastStep: number | null
 }
 
 // ---------- Encrypting the one-time-code secret at rest (AES-256-GCM) ----------
-function key(): Buffer {
-  const k = process.env.APP_ENCRYPTION_KEY;
-  if (k) { const b = Buffer.from(k, "base64"); if (b.length !== 32) throw new Error("APP_ENCRYPTION_KEY must be 32 bytes, base64 encoded"); return b; }
-  if (process.env.NODE_ENV === "production") throw new Error("APP_ENCRYPTION_KEY is required in production");
-  return createHash("sha256").update("abig-development-key").digest();
+/** A 32-byte key from the environment. Outside production a fixed development key stands in, different for each variable. */
+function keyFrom(name: string, devSeed: string): Buffer {
+  const k = process.env[name];
+  if (k) { const b = Buffer.from(k, "base64"); if (b.length !== 32) throw new Error(`${name} must be 32 bytes, base64 encoded`); return b; }
+  if (process.env.NODE_ENV === "production") throw new Error(`${name} is required in production`);
+  return createHash("sha256").update(devSeed).digest();
 }
-export function encryptSecret(plain: string): string {
-  const iv = randomBytes(12), c = createCipheriv("aes-256-gcm", key(), iv), ct = Buffer.concat([c.update(plain, "utf8"), c.final()]);
+const key = () => keyFrom("APP_ENCRYPTION_KEY", "abig-development-key");
+function encryptWith(k: Buffer, plain: string): string {
+  const iv = randomBytes(12), c = createCipheriv("aes-256-gcm", k, iv), ct = Buffer.concat([c.update(plain, "utf8"), c.final()]);
   return "v1:" + Buffer.concat([iv, c.getAuthTag(), ct]).toString("base64");
 }
-export function decryptSecret(stored: string): string {
-  const raw = Buffer.from(stored.replace(/^v1:/, ""), "base64"), d = createDecipheriv("aes-256-gcm", key(), raw.subarray(0, 12));
+function decryptWith(k: Buffer, stored: string): string {
+  const raw = Buffer.from(stored.replace(/^v1:/, ""), "base64"), d = createDecipheriv("aes-256-gcm", k, raw.subarray(0, 12));
   d.setAuthTag(raw.subarray(12, 28)); return Buffer.concat([d.update(raw.subarray(28)), d.final()]).toString("utf8");
 }
+export const encryptSecret = (plain: string) => encryptWith(key(), plain);
+export const decryptSecret = (stored: string) => decryptWith(key(), stored);
+
+// ---------- The SMTP password: its own key ----------
+// MAIL_ENCRYPTION_KEY, not APP_ENCRYPTION_KEY: the background worker must read the SMTP password, and with a key of its own it never holds the key that
+// protects two-step secrets, ID numbers and bank account numbers.
+const mailKey = () => keyFrom("MAIL_ENCRYPTION_KEY", "abig-development-mail-key");
+/** Why the SMTP password cannot be encrypted on this server, or null when it can. */
+export function mailKeyProblem(env: Record<string, string | undefined> = process.env): string | null {
+  const k = env.MAIL_ENCRYPTION_KEY;
+  if (!k) return env.NODE_ENV === "production" ? "MAIL_ENCRYPTION_KEY is not set on this server, so an SMTP password cannot be saved. Ask whoever deploys the system to set it." : null;
+  return Buffer.from(k, "base64").length === 32 ? null : "MAIL_ENCRYPTION_KEY on this server is not 32 bytes, base64 encoded, so an SMTP password cannot be saved.";
+}
+export const encryptMailSecret = (plain: string) => encryptWith(mailKey(), plain);
+export const decryptMailSecret = (stored: string) => decryptWith(mailKey(), stored);
 
 // ---------- Finding duplicates among encrypted values ----------
 /** A keyed hash, so equal values can be matched without being stored readably. Scoped, so the same value gives a different hash in each scope. */

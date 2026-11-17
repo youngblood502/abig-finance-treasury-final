@@ -75,6 +75,8 @@ WITH checks AS (
     + has_column_privilege('abig_app', 'supplier_bank_details', 'account_number_enc', 'SELECT')::int + has_column_privilege('abig_app', 'person_payment_details', 'account_number_enc', 'SELECT')::int
     + has_column_privilege('abig_app', 'company_bank_accounts', 'account_number_enc', 'INSERT,UPDATE')::int + has_column_privilege('abig_app', 'supplier_bank_details', 'account_number_enc', 'INSERT,UPDATE')::int
     + has_column_privilege('abig_app', 'person_payment_details', 'account_number_enc', 'INSERT,UPDATE')::int)::bigint
+  UNION ALL SELECT 'application or worker role can read or write the email settings table directly', (coalesce(has_table_privilege('abig_app', to_regclass('email_settings'), 'SELECT,INSERT,UPDATE,DELETE'), false)::int
+    + coalesce(has_table_privilege('abig_worker', to_regclass('email_settings'), 'SELECT,INSERT,UPDATE,DELETE'), false)::int)::bigint
   UNION ALL SELECT 'person holding a company-limited role in more companies than the role allows', count(*) FROM (
     SELECT cm.user_id, mr.role_id FROM membership_roles mr JOIN company_memberships cm ON cm.id = mr.membership_id AND cm.revoked_at IS NULL JOIN roles r ON r.id = mr.role_id
      WHERE r.max_companies IS NOT NULL GROUP BY cm.user_id, mr.role_id, r.max_companies HAVING count(DISTINCT cm.company_id) > r.max_companies) x

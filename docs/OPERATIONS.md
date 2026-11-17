@@ -43,6 +43,8 @@ Run the go-live step above before the first Monday opening. From then on each ac
 ## Encryption key
 People's ID numbers are encrypted with `APP_ENCRYPTION_KEY`, and duplicates are found with a hash built from the same key. Set the key before the first person is entered. Keep a copy somewhere safe, apart from the backups: without it, encrypted ID numbers cannot be read, and changing it makes existing ones unreadable and stops duplicates being found.
 
+The SMTP password a system administrator saves under Administration > Email is encrypted with a separate key, `MAIL_ENCRYPTION_KEY` (32 random bytes, base64, different from `APP_ENCRYPTION_KEY`). The website and the worker both get it; the worker never gets `APP_ENCRYPTION_KEY`. Without it, production refuses to save an SMTP password. While no email settings are saved there, the worker keeps using `SMTP_URL` and `MAIL_FROM`. If `MAIL_ENCRYPTION_KEY` changes, enter the SMTP password again on that screen; nothing else is affected.
+
 ## Backups (do this before go-live)
 `ops/backup.sh` writes a database dump and a copy of the uploaded invoices, with checksums, and removes copies older than 30 days. Run it from cron every night, as the owner of the backup folder:
 `0 2 * * * MIGRATION_DATABASE_URL=... BACKUP_DIR=/var/backups/abig STORAGE_DIR=/path/to/storage /path/to/ops/backup.sh`

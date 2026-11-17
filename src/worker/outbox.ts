@@ -3,7 +3,7 @@ import { Pool } from "pg";
 import { makeSender, tick } from "./mail";
 
 const pool = new Pool({ connectionString: process.env.WORKER_DATABASE_URL, max: 3 });
-const send = makeSender(); const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+const send = makeSender(pool); const appUrl = process.env.APP_URL ?? "http://localhost:3000";
 const log = (msg: string, extra: object = {}) => console.log(JSON.stringify({ t: new Date().toISOString(), msg, ...extra }));
 const every = (ms: number, name: string, sql: string) => setInterval(() => pool.query(sql).then((r) => { const n = Object.values(r.rows[0])[0]; if (Number(n) > 0) log(name, { count: n }); }).catch((e) => log(name + " failed", { error: String(e) })), ms);
 

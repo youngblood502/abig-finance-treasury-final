@@ -40,9 +40,14 @@ export const personDetail = async (tx: Tx, id: string) => {
 export interface AdminChange { occurred_at: Date; actor: string | null; action: string; metadata: unknown }
 export interface SignInEvent { occurred_at: Date; email: string | null; event: string; ip: string | null; detail: string | null }
 export const activity = async (tx: Tx) => ({
-  changes: await tx.q<AdminChange>("SELECT e.occurred_at, u.full_name AS actor, e.action, e.metadata FROM audit_events e LEFT JOIN users u ON u.id = e.actor_id WHERE e.action ~ '^(ROLE_|MEMBERSHIP_|ADMIN_|COMPANY_|USER_|GROUP_)' ORDER BY e.occurred_at DESC LIMIT 50"),
+  changes: await tx.q<AdminChange>("SELECT e.occurred_at, u.full_name AS actor, e.action, e.metadata FROM audit_events e LEFT JOIN users u ON u.id = e.actor_id WHERE e.action ~ '^(ROLE_|MEMBERSHIP_|ADMIN_|COMPANY_|USER_|GROUP_|EMAIL_)' ORDER BY e.occurred_at DESC LIMIT 50"),
   signIns: await tx.q<SignInEvent>("SELECT occurred_at, email, event, ip, detail FROM auth_events ORDER BY occurred_at DESC LIMIT 50"),
 });
+
+// ---------- Email settings ----------
+// Read through an admin-only database function. The password never comes back: only whether one is saved.
+export interface AdminEmailSettings { smtp_host: string; smtp_port: number; smtp_username: string | null; password_set: boolean; security: string; tls_verify: boolean; sender_name: string; sender_email: string; updated_at: Date; updated_by_name: string }
+export const emailSettings = async (tx: Tx) => (await tx.q<AdminEmailSettings>("SELECT * FROM admin_email_settings()"))[0] ?? null;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isUuid = (v: string) => UUID.test(v);
@@ -100,7 +105,7 @@ export const notificationList = (tx: Tx, f: NotificationFilters) =>
  * What the running system is set to. These come from the environment and the code, so they are shown and not edited here. A setting that holds a secret shows only whether it
  * is set: no value from the environment reaches this list.
  */
-export function systemSettings(env: Record<string, string | undefined> = process.env) {
+export function systemSettings(env: Record<string, string | undefined> = process.env, emailSaved = false) {
   const set = (k: string) => (env[k] ? "Set" : "Not set");
   return [
     { label: "Environment", value: env.NODE_ENV === "production" ? "Production" : "Not production" },
@@ -109,7 +114,8 @@ export function systemSettings(env: Record<string, string | undefined> = process
     { label: "Account lock", value: `${LOCK_MINUTES} minutes after ${MAX_FAILS} failed sign-ins` },
     { label: "Time zone", value: TIME_ZONE },
     { label: "Encryption key for ID numbers", value: set("APP_ENCRYPTION_KEY") },
-    { label: "Email sending", value: env.SMTP_URL ? "Configured" : "Not configured" },
+    { label: "Encryption key for the SMTP password", value: set("MAIL_ENCRYPTION_KEY") },
+    { label: "Email sending", value: emailSaved ? "Configured in Administration" : env.SMTP_URL ? "Configured" : "Not configured" },
     { label: "Document storage folder", value: set("STORAGE_DIR") },
   ];
 }
