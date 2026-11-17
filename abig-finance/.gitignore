@@ -6,3 +6,4 @@ node_modules
 next-env.d.ts
 CLAUDE.md
 .env.test
+/.claude/
