@@ -69,6 +69,7 @@ export const NOTIFICATION_EVENTS: Record<string, string> = {
   PERSON_DETAILS_PENDING: "Person's payment details to verify", ACCOUNT_ACCESS_GRANTED: "Account access given", ACCOUNT_ACCESS_WITHDRAWN: "Account access withdrawn",
   USER_LOCKED: "Account locked", PASSWORD_RESET_COMPLETED: "Password reset completed",
   ACCOUNT_DEACTIVATED: "Account deactivated", ACCOUNT_REACTIVATED: "Account reactivated",
+  SUPPLIER_BANK_DETAILS_DEACTIVATED: "Supplier bank details deactivated", SUPPLIER_BANK_DETAILS_REACTIVATED: "Supplier bank details reactivated",
 };
 export const RETRYABLE = new Set(["DEAD", "NO_RECIPIENTS"]);
 

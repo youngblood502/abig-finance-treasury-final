@@ -1,13 +1,13 @@
 import { dstr, etb } from "./format";
 
 // What each notification says: the email subject and body, and the same title and link for the in-app bell. No sending happens here.
-export interface OutboxEvent { id: string; event_type: string; request_id: string | null; lease_token?: string | null; payload: { path?: string; week_start?: string; supplier_name?: string; person_name?: string; company_name?: string; request_no?: string; reason?: string; overdue_amount?: number | string; account_label?: string; balance?: number | string; reserved?: number | string; shortfall_amount?: number | string } }
+export interface OutboxEvent { id: string; event_type: string; request_id: string | null; lease_token?: string | null; payload: { path?: string; week_start?: string; supplier_name?: string; person_name?: string; company_name?: string; request_no?: string; reason?: string; overdue_amount?: number | string; account_label?: string; balance?: number | string; reserved?: number | string; shortfall_amount?: number | string; destination_changed?: boolean } }
 
 const SUBJECTS: Record<string, (e: OutboxEvent) => string> = {
   REQUEST_SUBMITTED: (e) => `${e.payload.request_no} is waiting for verification`,
   REQUEST_RESTARTED: (e) => `${e.payload.request_no} changed and needs verification again`,
   REQUEST_VERIFIED: (e) => `${e.payload.request_no} is waiting for authorization`,
-  REQUEST_AUTHORIZED: (e) => `${e.payload.request_no} is authenticated and ready to be paid`,
+  REQUEST_AUTHORIZED: (e) => e.payload.destination_changed ? `${e.payload.request_no}: new supplier bank details are authorized and the payment can be sent` : `${e.payload.request_no} is authenticated and ready to be paid`,
   REQUEST_RESCHEDULE_NEEDED: (e) => `${e.payload.request_no}: a due date was changed`,
   REQUEST_RETURNED: (e) => `${e.payload.request_no} was returned for correction`,
   REQUEST_REJECTED: (e) => `${e.payload.request_no} was rejected`,
@@ -27,6 +27,8 @@ const SUBJECTS: Record<string, (e: OutboxEvent) => string> = {
   ACCOUNT_ACCESS_WITHDRAWN: (e) => `${e.payload.company_name} can no longer use the account ${e.payload.account_label}`,
   ACCOUNT_DEACTIVATED: (e) => `${e.payload.account_label} was deactivated`,
   ACCOUNT_REACTIVATED: (e) => `${e.payload.account_label} was reactivated`,
+  SUPPLIER_BANK_DETAILS_DEACTIVATED: (e) => `${e.payload.supplier_name}: bank details were deactivated`,
+  SUPPLIER_BANK_DETAILS_REACTIVATED: (e) => `${e.payload.supplier_name}: bank details were reactivated`,
   USER_LOCKED: () => "Your ABIG Finance account is locked after repeated failed sign-ins",
   PASSWORD_RESET_COMPLETED: () => "Your ABIG Finance password was changed",
 };
@@ -39,6 +41,8 @@ const NOTES: Record<string, string[]> = {
   PASSWORD_RESET_COMPLETED: ["You replaced the temporary password an administrator gave you. If this was not you, tell a system administrator now."],
   ACCOUNT_OPENING_OVERDUE: ["Balance checks on this account are refused until the week's opening balance is entered."],
   ACCOUNT_DEACTIVATED: ["No new payment request, reservation, approval or scheduled submission can use it. Requests that already hold or used funds on it were left as they were: nothing was cancelled or released. Review them on the account and decide what happens to each."],
+  SUPPLIER_BANK_DETAILS_DEACTIVATED: ["No new payment can use them. Requests that already name them were left as they were: nothing was cancelled, rejected or changed. They cannot go on to payment until the supplier's active verified details are chosen."],
+  SUPPLIER_BANK_DETAILS_REACTIVATED: ["They can be used again, with the status they had. Requests already moved to other details keep those."],
   ACCOUNT_REACTIVATED: ["It can be used again. Nothing waiting on it was submitted, approved, released or rescheduled automatically; scheduled requests that were waiting on it must be scheduled again."],
 };
 export function compose(e: OutboxEvent, appUrl: string): { subject: string; text: string } {
@@ -47,7 +51,8 @@ export function compose(e: OutboxEvent, appUrl: string): { subject: string; text
   if (e.payload.reason) lines.push("", `Reason: ${e.payload.reason}`);
   if (e.payload.overdue_amount) lines.push("", `Overdue amount: ${etb(e.payload.overdue_amount)}`);
   if (e.event_type === "ACCOUNT_SHORTFALL") lines.push("", `Balance: ${etb(e.payload.balance)}`, `Reserved: ${etb(e.payload.reserved)}`, "New submissions on this account are blocked until the shortfall is cleared.");
-  if (NOTES[e.event_type]) lines.push("", ...NOTES[e.event_type]);
+  // A re-authorization of new supplier details after the debit: the usual "the amount is now deducted" note would be wrong, the reason says what happened.
+  if (NOTES[e.event_type] && !(e.event_type === "REQUEST_AUTHORIZED" && e.payload.destination_changed)) lines.push("", ...NOTES[e.event_type]);
   lines.push("", `Open it: ${appUrl.replace(/\/$/, "")}${e.request_id ? `/requests/${e.request_id}` : e.payload.path ?? "/accounts"}`, "", "ABIG Finance");
   return { subject, text: lines.join("\n") };
 }

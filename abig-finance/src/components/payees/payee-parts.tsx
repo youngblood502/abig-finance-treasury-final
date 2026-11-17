@@ -17,20 +17,34 @@ export function PayeeTabs({ active, suppliers, people }: { active: "suppliers" |
 export const Section = ({ title, children }: { title: string; children: React.ReactNode }) => <section className="mt-4"><h3 className="m-0 mb-2 text-base">{title}</h3>{children}</section>;
 
 /** label is plain text for dialogs; display, when given, is what the list shows instead (for example the account number with its eye button). */
-export interface VersionItem { id: string; version: number; label: string; display?: React.ReactNode; status: string; created_by: string; rejection_reason: string | null }
+export interface VersionItem { id: string; version: number; label: string; display?: React.ReactNode; status: string; created_by: string; rejection_reason: string | null; is_active?: boolean; deactivation_reason?: string | null }
+/** Deactivating and reactivating a version (supplier bank details). Deactivating: whoever manages the supplier or verifies; reactivating: verifiers only. */
+export interface VersionActivation { canDeactivate: boolean; canReactivate: boolean; deactivate: (f: FormData) => Promise<void>; reactivate: (f: FormData) => Promise<void> }
 /**
  * Every version of a payee's payment details. A second person must verify each one: it is offered to those who may, never to whoever entered it, and the database checks both.
  */
-export function VersionList({ versions, canVerify, userId, verify, reject }: { versions: VersionItem[]; canVerify: boolean; userId: string; verify: (f: FormData) => Promise<void>; reject: (f: FormData) => Promise<void> }) {
+export function VersionList({ versions, canVerify, userId, verify, reject, activation }: { versions: VersionItem[]; canVerify: boolean; userId: string; verify: (f: FormData) => Promise<void>; reject: (f: FormData) => Promise<void>; activation?: VersionActivation }) {
   if (versions.length === 0) return <p className="m-0 text-sm text-muted-foreground">No payment details yet.</p>;
   return (
     <ul className="m-0 flex list-none flex-col gap-2 p-0">
       {versions.map((v) => (
         <li key={v.id} className="rounded-md border bg-background p-3 text-sm">
-          <div className="flex flex-wrap items-center justify-between gap-2"><span><b>Version {v.version}</b> {v.display ?? v.label}</span><Badge variant={v.status === "VERIFIED" ? "default" : v.status === "PENDING" ? "warning" : "outline"}>{VERSION_STATUS[v.status] ?? v.status}</Badge></div>
+          <div className="flex flex-wrap items-center justify-between gap-2"><span><b>Version {v.version}</b> {v.display ?? v.label}</span>
+            <span className="flex flex-wrap gap-1"><Badge variant={v.status === "VERIFIED" ? "default" : v.status === "PENDING" ? "warning" : "outline"}>{VERSION_STATUS[v.status] ?? v.status}</Badge>{v.is_active === false && <Badge variant="destructive">Deactivated</Badge>}</span></div>
           {v.rejection_reason && <p className="m-0 mt-1 text-muted-foreground">Rejected: {v.rejection_reason}</p>}
-          {v.status === "PENDING" && v.created_by === userId && <p className="m-0 mt-1 text-muted-foreground">Someone else must verify this.</p>}
-          {v.status === "PENDING" && v.created_by !== userId && canVerify && (
+          {v.is_active === false && <p className="m-0 mt-1 text-muted-foreground">Deactivated: {v.deactivation_reason}. No new payment can use these details; requests that already name them keep them and need active details before they are paid.</p>}
+          {v.status === "PENDING" && v.is_active !== false && v.created_by === userId && <p className="m-0 mt-1 text-muted-foreground">Someone else must verify this.</p>}
+          {activation && (v.status === "VERIFIED" || v.status === "PENDING") && v.is_active !== false && activation.canDeactivate && (
+            <div className="mt-2"><ConfirmDialog title={`Deactivate version ${v.version}?`} description={`${v.label}. No new payment can use these details. Requests that already name them are not changed, cancelled or rejected; they cannot go on to payment until active details are chosen.`} confirmLabel="Deactivate" cancelLabel="Keep them" destructive action={activation.deactivate} fields={{ id: v.id }} trigger={<Button size="sm" variant="outline">Deactivate</Button>}>
+              <label className="f">Reason (required)<textarea name="reason" rows={2} required minLength={3} /></label>
+            </ConfirmDialog></div>
+          )}
+          {activation && v.is_active === false && v.status !== "SUPERSEDED" && activation.canReactivate && v.created_by !== userId && (
+            <div className="mt-2"><ConfirmDialog title={`Reactivate version ${v.version}?`} description={`${v.label}. They return as ${(VERSION_STATUS[v.status] ?? v.status).toLowerCase()}, and payments can use them again.`} confirmLabel="Reactivate" cancelLabel="Leave inactive" action={activation.reactivate} fields={{ id: v.id }} trigger={<Button size="sm" variant="outline">Reactivate</Button>}>
+              <label className="f">Why can they be used again? (required)<textarea name="note" rows={2} required minLength={3} /></label>
+            </ConfirmDialog></div>
+          )}
+          {v.status === "PENDING" && v.is_active !== false && v.created_by !== userId && canVerify && (
             <div className="mt-2 flex flex-wrap gap-2">
               <ConfirmDialog title={`Verify version ${v.version}?`} description={`${v.label}. Payments can go to these details once verified.`} confirmLabel="Verify" cancelLabel="Not yet" action={verify} fields={{ id: v.id }} trigger={<Button size="sm">Verify</Button>} />
               <ConfirmDialog title={`Reject version ${v.version}?`} description={v.label} confirmLabel="Reject" cancelLabel="Keep it waiting" destructive action={reject} fields={{ id: v.id }} trigger={<Button size="sm" variant="outline">Reject</Button>}>
