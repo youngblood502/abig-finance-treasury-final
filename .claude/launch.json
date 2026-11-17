@@ -1,6 +1,6 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "abig-dev", "runtimeExecutable": "npm", "runtimeArgs": ["--prefix", "abig-finance", "run", "dev"], "port": 3000 }
+    { "name": "abig-preview", "runtimeExecutable": "node", "runtimeArgs": ["abig-finance/ops/preview-dev.mjs"], "port": 3000 }
   ]
 }
