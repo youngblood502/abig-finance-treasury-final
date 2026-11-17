@@ -8,7 +8,7 @@ import { encryptMailSecret, mailKeyProblem, temporaryPassword } from "@/lib/cryp
 import { withUser } from "@/lib/db";
 import { message, translate, WorkflowError } from "@/lib/errors";
 import { emailSettingsProblem, isEmail, sendTestEmail, type EmailSettingsRow } from "@/lib/mail-settings";
-import { currentUserId } from "@/lib/session";
+import { COOKIE, currentUserId } from "@/lib/session";
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
 
@@ -56,6 +56,29 @@ export async function setUserActive(f: FormData) {
   return done(adminBackPath(str(f, "user")), active ? "User reactivated." : "User deactivated and signed out everywhere.", async () => {
     await admin(async (tx, uid) => { if (id === uid && !active) throw new WorkflowError(422, "You cannot deactivate yourself."); await tx.q("UPDATE users SET is_active = $2 WHERE id = $1", [id, active]); await audit(tx, uid, active ? "USER_REACTIVATED" : "USER_DEACTIVATED", id, {}); });
     if (!active) await revokeSessions(id);
+  });
+}
+const IDENTITY_SAVED: Record<string, string> = {
+  UNCHANGED: "Nothing was different, so nothing was changed.", NAME: "Name changed.",
+  EMAIL: "Email address changed. The person signs in with the new address from now on and has been signed out everywhere.",
+  BOTH: "Name and email address changed. The person signs in with the new address from now on and has been signed out everywhere.",
+};
+/**
+ * Corrects a person's name and the email address they sign in with. The database function does the work: it refuses anyone but a system administrator, keeps
+ * names and addresses unique, audits the previous and new values and, when the address changes, signs the person out. Password, two-step sign-in, status,
+ * administrator rights, company access and roles are not touched.
+ */
+export async function updateUserIdentity(f: FormData) {
+  const id = str(f, "user"); let out = "UNCHANGED", self = false;
+  return done(adminBackPath(id), () => (self && (out === "EMAIL" || out === "BOTH") ? "Your email address was changed. Use it to sign in from now on; your other sessions were signed out." : IDENTITY_SAVED[out] ?? "Saved."), async () => {
+    if (!isUuid(id)) throw new WorkflowError(404, "Person not found.");
+    const name = str(f, "name").replace(/\s+/g, " "), email = str(f, "email").toLowerCase();
+    if (!name) throw new WorkflowError(422, "Enter the person's name.");
+    if (!email) throw new WorkflowError(422, "Enter the person's email address.");
+    if (!isEmail(email)) throw new WorkflowError(422, "Enter a valid email address.");
+    out = await admin(async (tx, uid) => { self = uid === id; return (await tx.q<{ r: string }>("SELECT admin_update_user_identity($1,$2,$3) AS r", [id, name, email]))[0].r; });
+    // The database signs everyone else out. An administrator changing their own address keeps the session they are in; the others end here.
+    if (self && (out === "EMAIL" || out === "BOTH")) await revokeSessions(id, (await cookies()).get(COOKIE)?.value);
   });
 }
 export async function setAdmin(f: FormData) {

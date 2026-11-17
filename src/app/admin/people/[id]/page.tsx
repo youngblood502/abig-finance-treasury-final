@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Flash } from "@/components";
-import { addGroupGrant, resetMfa, resetPassword, revokeGroupGrant, revokeMembership, setAdmin, setMembershipRoles, setUserActive, unlockUser } from "../../../admin-actions";
+import { addGroupGrant, updateUserIdentity, resetMfa, resetPassword, revokeGroupGrant, revokeMembership, setAdmin, setMembershipRoles, setUserActive, unlockUser } from "../../../admin-actions";
 import { SecretNotice } from "@/components/admin/admin-parts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -36,6 +36,14 @@ export default async function Person({ params, searchParams }: { params: Promise
         {u.is_system_admin && <Badge variant="warning">System administrator</Badge>}{u.must_change_password && <Badge variant="warning">Temporary password</Badge>}{locked && <Badge variant="destructive">Locked</Badge>}
         <Badge variant="outline">{u.totp_enabled ? "Two-step on" : "Two-step off"}</Badge>
       </div>
+
+      <Card title="Name and email">
+        <p className="mt-0 text-sm text-muted-foreground">{self ? "Changing your email address changes what you sign in with and signs out your other sessions." : `Changing the email address changes what ${u.full_name} signs in with and signs them out everywhere.`} The password, two-step sign-in, roles and company access stay as they are. Each change is recorded with the previous and new value.</p>
+        <form action={updateUserIdentity} className="grid gap-3 sm:grid-cols-2"><input type="hidden" name="user" value={u.id} />
+          <label className="f">Full name<input name="name" defaultValue={u.full_name} required maxLength={120} autoComplete="off" /></label>
+          <label className="f">Email address (used to sign in)<input name="email" type="email" defaultValue={u.email} required maxLength={254} autoComplete="off" /></label>
+          <div className="sm:col-span-2"><SubmitButton variant="outline">Save name and email</SubmitButton></div></form>
+      </Card>
 
       <Card title="Company access">
         {members.length === 0 ? <p className="mt-0 text-sm text-muted-foreground">No company access.</p> : (
