@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Flash } from "@/components";
-import { clearEmailSettings, createCompany, createRole, createUser, saveEmailSettings, sendEmailTest } from "../admin-actions";
+import { addVatRate, clearEmailSettings, createCompany, createRole, createUser, saveEmailSettings, saveWithholding, sendEmailTest, setDefaultVatRate, setVatRateActive, updateVatRate } from "../admin-actions";
+import { percentLabel } from "@/lib/tax";
 import { CompanyPanel, RolePanel, SecretNotice } from "@/components/admin/admin-parts";
 import { TabLinks } from "@/components/layout/tab-links";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +11,7 @@ import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-t
 import { PageHeader } from "@/components/ui/page-header";
 import { SidePanel } from "@/components/ui/side-panel";
 import { SubmitButton } from "@/components/ui/submit-button";
-import { activity, companyList, emailSettings, notificationFilters, notificationList, notificationSummary, peopleList, permissionList, roleLimit, roleList, signedInLocked, systemSettings } from "@/lib/admin";
+import { activity, companyList, emailSettings, notificationFilters, notificationList, notificationSummary, peopleList, permissionList, roleLimit, roleList, signedInLocked, systemSettings, taxSettings } from "@/lib/admin";
 import { NotificationMonitor } from "@/components/admin/notifications";
 import { EMAIL_SECURITY } from "@/lib/mail-settings";
 import { withUser } from "@/lib/db";
@@ -18,7 +19,7 @@ import { dtime } from "@/lib/format";
 import { requireAccess } from "@/lib/rbac";
 import { requireMe } from "@/lib/session";
 
-const TABS: [string, string][] = [["users", "People and access"], ["companies", "Companies"], ["roles", "Roles and permissions"], ["activity", "Activity"], ["email", "Email"], ["system", "System"]];
+const TABS: [string, string][] = [["users", "People and access"], ["companies", "Companies"], ["roles", "Roles and permissions"], ["activity", "Activity"], ["tax", "Tax"], ["email", "Email"], ["system", "System"]];
 /** A person's access can be a long line: on a phone it wraps inside its card. */
 const WRAP = "h-auto max-w-full shrink whitespace-normal";
 const Panel = ({ children }: { children: React.ReactNode }) => <div className="mb-3 rounded-xl border bg-card p-4">{children}</div>;
@@ -85,6 +86,45 @@ async function System({ uid, sp }: { uid: string; sp: Record<string, string | un
   </>);
 }
 
+/** VAT rates and withholding tax. Requests record a snapshot of these when they are saved, so changes never alter a submitted request. */
+async function Tax({ uid }: { uid: string }) {
+  const d = await withUser(uid, taxSettings);
+  const w = d.withholding;
+  const columns: DataColumn[] = [{ key: "name", header: "VAT rate", primary: true }, { key: "rate", header: "Percentage", align: "right" }, { key: "status", header: "Status" }, { key: "changed", header: "Last changed" }, { key: "actions", header: "" }];
+  const rows: DataRow[] = d.vat.map((v) => ({ id: v.id!, cells: {
+    name: <b>{v.name}</b>, rate: percentLabel(v.rate_percent),
+    status: <span className="flex flex-wrap gap-1">{v.is_default && <Badge>Default</Badge>}<Badge variant={v.is_active ? "outline" : "destructive"}>{v.is_active ? "Active" : "Inactive"}</Badge></span>,
+    changed: <span className="text-xs text-muted-foreground">{dtime(v.updated_at)}{v.updated_by_name ? `, ${v.updated_by_name}` : ""}</span>,
+    actions: <span className="flex flex-wrap justify-end gap-1">
+      <SidePanel title={`Change ${v.name}`} description="Requests already saved keep the name and percentage they recorded." trigger={<Button variant="outline" size="sm">Change</Button>}>
+        <form action={updateVatRate} className="mt-3 flex flex-col gap-3"><input type="hidden" name="id" value={v.id!} /><Field label="Name" name="name" defaultValue={v.name} required maxLength={80} /><Field label="Percentage" name="rate" defaultValue={v.rate_percent} required inputMode="decimal" pattern="\d{1,2}(\.\d{1,2})?" /><div><SubmitButton>Save</SubmitButton></div></form>
+      </SidePanel>
+      {v.is_active && !v.is_default && <ConfirmDialog title={`Make ${v.name} the default?`} description="New requests start with this rate selected." confirmLabel="Make default" action={setDefaultVatRate} fields={{ id: v.id! }} trigger={<Button variant="outline" size="sm">Make default</Button>} />}
+      {!v.is_default && <ConfirmDialog title={`${v.is_active ? "Deactivate" : "Reactivate"} ${v.name}?`} description={v.is_active ? "It can no longer be chosen on a request. Requests that recorded it keep it; a draft using it must choose another rate before it is submitted." : "It can be chosen on requests again."} confirmLabel={v.is_active ? "Deactivate" : "Reactivate"} destructive={v.is_active} action={setVatRateActive} fields={{ id: v.id!, active: String(!v.is_active) }} trigger={<Button variant="outline" size="sm">{v.is_active ? "Deactivate" : "Reactivate"}</Button>} />}
+    </span> } }));
+  return (<>
+    <Panel>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><h2 className="m-0">VAT rates</h2>
+        <SidePanel title="Add a VAT rate" description="A clear name and its percentage, from 0 to less than 100." trigger={<Button size="sm">Add a VAT rate</Button>}>
+          <form action={addVatRate} className="mt-3 flex flex-col gap-3"><Field label="Name" name="name" required maxLength={80} placeholder="Reduced VAT" /><Field label="Percentage" name="rate" required inputMode="decimal" pattern="\d{1,2}(\.\d{1,2})?" placeholder="7.5" /><div><SubmitButton>Add VAT rate</SubmitButton></div></form>
+        </SidePanel></div>
+      <DataTable caption="VAT rates" columns={columns} rows={rows} emptyMessage="No VAT rates." />
+      <p className="mb-0 text-xs text-muted-foreground">Each request records the rate&apos;s name and percentage when it is saved, so changing or deactivating a rate never changes a submitted request. Rates are never deleted.</p>
+    </Panel>
+    <Panel>
+      <h2 className="mt-0">Withholding tax</h2>
+      <p className="mt-0 text-sm text-muted-foreground">Withholding is optional on each request, chosen by its creator. It is calculated on the amount before VAT, and only when that amount is at least the threshold. It is stored for reporting: it does not change what is reserved or debited, which is the net payment.</p>
+      {w.threshold_amount === null && <div role="alert" className="note mb-3">No threshold is set, so withholding cannot be selected on requests yet. Set the threshold that applies to your companies.</div>}
+      <form action={saveWithholding} className="grid gap-3 sm:grid-cols-2">
+        <Field label="Withholding percentage" name="rate" defaultValue={w.rate_percent} required inputMode="decimal" pattern="\d{1,2}(\.\d{1,2})?" />
+        <Field label="Threshold: lowest amount before VAT (ETB)" name="threshold" defaultValue={w.threshold_amount ?? ""} required inputMode="decimal" pattern="[\d,]+(\.\d{1,2})?" />
+        <p className="m-0 text-xs text-muted-foreground sm:col-span-2">Last changed {dtime(w.updated_at)}{w.updated_by_name ? ` by ${w.updated_by_name}` : ""}. Changes are recorded on the Activity tab with the previous and new values.</p>
+        <div className="sm:col-span-2"><SubmitButton>Save withholding settings</SubmitButton></div>
+      </form>
+    </Panel>
+  </>);
+}
+
 /** The mail server for notifications. Only a system administrator reaches this, and the saved password is never read back: the screen knows only whether there is one. */
 async function Email({ uid }: { uid: string }) {
   const d = await withUser(uid, async (tx) => ({ s: await emailSettings(tx), mine: (await tx.q<{ email: string }>("SELECT email FROM users WHERE id = app_user_id()"))[0]?.email ?? "" }));
@@ -148,6 +188,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<Re
       {tab === "companies" && <Companies uid={me.id} />}
       {tab === "roles" && <Roles uid={me.id} />}
       {tab === "activity" && <Activity uid={me.id} />}
+      {tab === "tax" && <Tax uid={me.id} />}
       {tab === "email" && <Email uid={me.id} />}
       {tab === "system" && <System uid={me.id} sp={sp} />}
     </>

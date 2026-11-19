@@ -40,9 +40,17 @@ export const personDetail = async (tx: Tx, id: string) => {
 export interface AdminChange { occurred_at: Date; actor: string | null; action: string; metadata: unknown }
 export interface SignInEvent { occurred_at: Date; email: string | null; event: string; ip: string | null; detail: string | null }
 export const activity = async (tx: Tx) => ({
-  changes: await tx.q<AdminChange>("SELECT e.occurred_at, u.full_name AS actor, e.action, e.metadata FROM audit_events e LEFT JOIN users u ON u.id = e.actor_id WHERE e.action ~ '^(ROLE_|MEMBERSHIP_|ADMIN_|COMPANY_|USER_|GROUP_|EMAIL_)' ORDER BY e.occurred_at DESC LIMIT 50"),
+  changes: await tx.q<AdminChange>("SELECT e.occurred_at, u.full_name AS actor, e.action, e.metadata FROM audit_events e LEFT JOIN users u ON u.id = e.actor_id WHERE e.action ~ '^(ROLE_|MEMBERSHIP_|ADMIN_|COMPANY_|USER_|GROUP_|EMAIL_|TAX_)' ORDER BY e.occurred_at DESC LIMIT 50"),
   signIns: await tx.q<SignInEvent>("SELECT occurred_at, email, event, ip, detail FROM auth_events ORDER BY occurred_at DESC LIMIT 50"),
 });
+
+// ---------- Tax settings ----------
+// Read through an admin-only database function, inactive VAT rates included.
+export interface AdminTaxRow { kind: "VAT" | "WITHHOLDING"; id: string | null; name: string; rate_percent: string; is_active: boolean; is_default: boolean; threshold_amount: string | null; updated_at: Date; updated_by_name: string | null }
+export const taxSettings = async (tx: Tx) => {
+  const rows = await tx.q<AdminTaxRow>("SELECT kind, id, name, rate_percent::text AS rate_percent, is_active, is_default, threshold_amount::text AS threshold_amount, updated_at, updated_by_name FROM admin_tax_settings()");
+  return { vat: rows.filter((r) => r.kind === "VAT"), withholding: rows.find((r) => r.kind === "WITHHOLDING")! };
+};
 
 // ---------- Email settings ----------
 // Read through an admin-only database function. The password never comes back: only whether one is saved.

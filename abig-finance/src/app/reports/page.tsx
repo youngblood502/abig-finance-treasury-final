@@ -12,7 +12,8 @@ import { companyScope } from "@/lib/company-scope";
 import { withUser } from "@/lib/db";
 import { accountPlace, dstr, dtime, etb, etbOrBlank, PAYMENT_METHODS, STATE_LABEL, WEEK_STATUS } from "@/lib/format";
 import { canAccess, requireAccess } from "@/lib/rbac";
-import { AGE_BUCKETS, ageBucket, AUDIT_LIMIT, auditRows, BUCKETS, cashRows, filterQuery, outstandingRows, paymentRows, pendingRows, REPORT_TABS, reportFilters, totalOf, totalsBy, weekRows, type AuditRow, type CashRow, type OutstandingRow, type PaymentRow, type PendingRow, type ReportFilters, type WeekRow } from "@/lib/reports";
+import { AGE_BUCKETS, ageBucket, AUDIT_LIMIT, auditRows, BUCKETS, cashRows, filterQuery, outstandingRows, paymentRows, pendingRows, REPORT_TABS, reportFilters, sumText, taxRows, totalOf, totalsBy, weekRows, type AuditRow, type CashRow, type OutstandingRow, type PaymentRow, type PendingRow, type ReportFilters, type TaxRow, type WeekRow } from "@/lib/reports";
+import { percentLabel } from "@/lib/tax";
 import { requireMe } from "@/lib/session";
 
 const hidden = <span className="text-muted-foreground">Not shown</span>;
@@ -59,6 +60,31 @@ function Payments({ rows, f }: { rows: PaymentRow[]; f: ReportFilters }) {
     <StatGrid><StatTile label="Debited in this period" value={etb(totalOf(rows, (r) => r.amount))} hint={`${rows.length} payment${rows.length === 1 ? "" : "s"}`} /><StatTile label="Confirmed Paid" value={etb(totalOf(rows.filter((r) => r.workflow_state === "PAID"), (r) => r.amount))} /><StatTile label="Not yet Paid" value={etb(totalOf(rows.filter((r) => r.workflow_state !== "PAID"), (r) => r.amount))} /></StatGrid>
     <div className="mb-3 grid gap-3 md:grid-cols-2"><Totals title="By company" rows={totalsBy(rows, (r) => r.company_name, (r) => r.amount)} /><Totals title="By method" rows={totalsBy(rows, (r) => PAYMENT_METHODS[r.payment_method], (r) => r.amount)} /></div>
     <Panel><DataTable caption="Payments" columns={columns} rows={table} totals={{ when: "Total" }} sumColumns={["amount"]} emptyMessage="No payments in this period." /></Panel>
+  </>);
+}
+
+function Tax({ rows, f }: { rows: TaxRow[]; f: ReportFilters }) {
+  const columns: DataColumn[] = [{ key: "when", header: "Authenticated", primary: true, sortable: true }, { key: "request", header: "Request", sortable: true }, { key: "company", header: "Company", sortable: true }, { key: "payee", header: "Payee" },
+    { key: "rate", header: "VAT rate" }, { key: "before", header: "Before VAT", align: "right" }, { key: "vat", header: "VAT", align: "right" }, { key: "gross", header: "Total incl. VAT", align: "right" }, { key: "wht", header: "Withholding", align: "right" }, { key: "net", header: "Net payment", align: "right" }];
+  const notRecorded = <span className="text-muted-foreground">Not recorded</span>;
+  const table: DataRow[] = rows.map((r) => ({ id: r.request_no, sort: { when: r.authenticated_at.getTime(), request: r.request_no, company: r.company_name },
+    cells: { when: dtime(r.authenticated_at), request: r.request_no, company: r.company_name, payee: r.payee_name ?? hidden,
+      rate: r.recorded ? `${r.vat_rate_name} (${percentLabel(r.vat_rate_percent!)})` : notRecorded, before: r.recorded ? etb(r.amount_before_vat) : notRecorded, vat: r.recorded ? etb(r.vat_amount) : notRecorded,
+      gross: r.recorded ? etb(r.gross_amount) : notRecorded, wht: r.recorded ? (r.withholding_rate_percent ? `${etb(r.withholding_amount)} (${percentLabel(r.withholding_rate_percent)})` : etb(0)) : notRecorded, net: etb(r.net_amount) } }));
+  const rec = rows.filter((r) => r.recorded);
+  const byCompany = [...new Set(rec.map((r) => r.company_name))].map((c) => { const x = rec.filter((r) => r.company_name === c); return { c, vat: sumText(x.map((r) => r.vat_amount)), wht: sumText(x.map((r) => r.withholding_amount)) }; });
+  return (<>
+    <FilterBar tab="tax" kind="tax" f={f} search="Request, company or payee" />
+    <StatGrid>
+      <StatTile label="Amount before VAT" value={etb(sumText(rec.map((r) => r.amount_before_vat)))} hint={`${rec.length} payment${rec.length === 1 ? "" : "s"} with a tax breakdown`} />
+      <StatTile label="VAT" value={etb(sumText(rec.map((r) => r.vat_amount)))} />
+      <StatTile label="Total including VAT" value={etb(sumText(rec.map((r) => r.gross_amount)))} />
+      <StatTile label="Withholding tax" value={etb(sumText(rec.map((r) => r.withholding_amount)))} />
+      <StatTile label="Net payments" value={etb(sumText(rows.map((r) => r.net_amount)))} hint={rows.length > rec.length ? `Includes ${rows.length - rec.length} without a tax breakdown` : undefined} />
+    </StatGrid>
+    <p className="mute">Each request&apos;s recorded rates and figures, never today&apos;s settings. Withholding is recorded for reporting; the net payment is what was debited. Requests created before tax configuration show &quot;Not recorded&quot;.</p>
+    {byCompany.length > 1 && <Panel><h3 className="m-0 mb-2 text-base">By company</h3><dl className="m-0">{byCompany.map((b) => <div key={b.c} className="flex justify-between gap-3 py-0.5 text-sm"><dt className="text-muted-foreground">{b.c}</dt><dd className="m-0 tabular-nums">VAT {etb(b.vat)} · Withholding {etb(b.wht)}</dd></div>)}</dl></Panel>}
+    <Panel><DataTable caption="VAT and withholding" columns={columns} rows={table} emptyMessage="No payments in this period." /></Panel>
   </>);
 }
 
@@ -111,6 +137,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
   const company = await companyScope(me.id);
   const body = await withUser(me.id, async (tx) => {
     if (tab === "payments") return <Payments rows={await paymentRows(tx, f, company)} f={f} />;
+    if (tab === "tax") return <Tax rows={await taxRows(tx, f, company)} f={f} />;
     if (tab === "outstanding") return <Outstanding rows={await outstandingRows(tx, company)} />;
     if (tab === "weeks") return <Weeks rows={await weekRows(tx, f, company)} f={f} openWeek={canAccess(me, "/treasury")} />;
     if (tab === "cash") return <Cash rows={await cashRows(tx, company)} />;

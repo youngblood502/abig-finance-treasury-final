@@ -50,7 +50,7 @@ describe("the shared request display", () => {
   });
   it("tells one history from both audit tables, oldest first, with money shown as money", () => {
     const h = requestHistory([event("SUBMIT", null, 0), event("RETURN", "Wrong", 2000)], [{ id: "1", field: "total_amount", old_value: "1000", new_value: "900", reason: "Corrected", occurred_at: new Date(1800000000000 + 1000), full_name: null }]);
-    expect(h.map((e) => e.title)).toEqual(["Submitted", "Total changed", "Returned for correction"]);
+    expect(h.map((e) => e.title)).toEqual(["Submitted", "Net payment changed", "Returned for correction"]);
     expect(h[1]).toMatchObject({ detail: "ETB 1,000.00 to ETB 900.00", reason: "Corrected", who: "Someone at the company" });
     expect(h[2]).toMatchObject({ reason: "Wrong", tone: "warning" });
     const inst = requestHistory([], [{ id: "2", field: "amount", old_value: "600000", new_value: "550000", reason: "Corrected", occurred_at: new Date(1800000000000), full_name: "Dawit" }]);

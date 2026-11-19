@@ -17,6 +17,7 @@ import { PERSON_DETAIL_FOR_METHOD, protectIdNumber } from "@/lib/payees";
 import { protectAccountNumber } from "@/lib/account-numbers";
 import { notificationLink } from "@/lib/notification-text";
 import { runWorkflow, type WorkflowAction } from "@/lib/workflow";
+import { centsToPlain, parseCents, taxFields } from "@/lib/tax";
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
 const num = (f: FormData, k: string) => { const v = Number(str(f, k)); if (!Number.isFinite(v)) throw new WorkflowError(400, "Please check the numbers you entered."); return v; };
@@ -94,6 +95,31 @@ const personDetail = async (tx: Tx, personId: string, method: string) => {
   return kind ? (await tx.q<{ id: string }>("SELECT id FROM person_payment_details WHERE person_id = $1 AND kind = $2 AND status = 'VERIFIED'", [personId, kind]))[0]?.id ?? null : null;
 };
 
+/**
+ * The amount and tax inputs and the installments of a request form, as exact strings: no floating point. The database calculates the VAT,
+ * gross, withholding and net from the inputs and the current settings. With one installment its amount is the calculated net payment.
+ */
+function amountFields(f: FormData) {
+  const t = taxFields(f);
+  if (!t.enteredRaw) throw new WorkflowError(422, "Enter the amount.");
+  if (t.entered === null) throw new WorkflowError(422, "Enter the amount as a number with at most two decimal places.");
+  if (!t.vatRateId || !UUID_RE.test(t.vatRateId)) throw new WorkflowError(422, "Choose a VAT rate.");
+  const dues = f.getAll("due").map(String), amts = f.getAll("amt").map(String);
+  const rows = dues.map((d, i) => ({ d: d.trim(), raw: (amts[i] ?? "").trim() })).filter((x) => x.d);
+  const inst = rows.map((x) => {
+    const c = parseCents(x.raw);
+    if (rows.length > 1 && (c === null || c <= 0n)) throw new WorkflowError(422, "Enter an amount for each installment, with at most two decimal places.");
+    return { d: x.d, a: c === null ? null : centsToPlain(c) };
+  });
+  return { t, inst };
+}
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Writes the installments after the request row, so a single installment takes the net the database calculated. */
+async function writeInstallments(tx: Tx, id: string, inst: { d: string; a: string | null }[]) {
+  const net = (await tx.q<{ n: string }>("SELECT total_amount::text AS n FROM payment_requests WHERE id = $1", [id]))[0].n;
+  for (const [i, x] of inst.entries()) await tx.q("INSERT INTO payment_installments (request_id, seq, due_date, amount) VALUES ($1,$2,$3::date,$4::numeric)", [id, i + 1, x.d, inst.length === 1 ? net : x.a]);
+}
+
 // Saving and submitting are separate actions, one per button: once React has loaded, a form post does not say which button was pressed.
 export async function createRequest(f: FormData) { return saveNewRequest(f, "draft"); }
 export async function createAndSubmitRequest(f: FormData) { return saveNewRequest(f, "submit"); }
@@ -108,19 +134,20 @@ async function saveNewRequest(f: FormData, mode: SaveMode) {
     const [companyId, payeeType, payeeId] = oneTime ? [str(f, "ot_company"), "ONE_TIME", ""] : str(f, "target").split("|");
     const person = payeeType === "PERSON", method = str(f, "payment_method") || "TRANSFER";
     const ot = oneTime ? oneTimeFields(f) : null;
-    const dues = f.getAll("due").map(String), amts = f.getAll("amt").map(String);
-    const inst = dues.map((d, i) => ({ d, a: Number(amts[i]) })).filter((x) => x.d && x.a > 0);
-    const total = inst.reduce((s, x) => s + x.a, 0);
+    const { t, inst } = amountFields(f);
     const file = f.get("invoice");
     id = await dbl(withUser(uid, async (tx) => {
       const otId = ot ? (await tx.q<{ id: string }>("SELECT one_time_payee_create($1,$2,$3,$4,$5,$6) AS id", [companyId, ot.name, ot.phone, ot.bank, ot.last4, ot.enc]))[0].id : null;
       const details = ot ? null : person ? await personDetail(tx, payeeId, method) : await supplierDetail(tx, payeeId, method);
       const supplier = !ot && !person;
+      // total_amount is a placeholder: the database's tax trigger replaces it with the calculated net payment.
       const rid = (await tx.q<{ id: string }>(
-        `INSERT INTO payment_requests (debtor_company_id, payee_type, supplier_id, person_payee_id, one_time_payee_id, supplier_bank_detail_id, person_payment_detail_id, debit_account_id, created_by, invoice_ref, invoice_date, description, priority, total_amount, payment_method)
-         VALUES ($1,$2::payee_type,$3,$4,$15,$5,$6,$7,$8,$9,$10::date,$11,$12,$13,$14::payment_method) RETURNING id`,
-        [companyId, ot ? "ONE_TIME" : person ? "PERSON" : "SUPPLIER", supplier ? payeeId : null, person ? payeeId : null, supplier ? details : null, person ? details : null, str(f, "account") || null, uid, str(f, "invoice_ref") || null, str(f, "invoice_date") || null, str(f, "description") || null, str(f, "priority") || "NORMAL", total || 0, method, otId]))[0].id;
-      for (const [i, x] of inst.entries()) await tx.q("INSERT INTO payment_installments (request_id, seq, due_date, amount) VALUES ($1,$2,$3::date,$4)", [rid, i + 1, x.d, x.a]);
+        `INSERT INTO payment_requests (debtor_company_id, payee_type, supplier_id, person_payee_id, one_time_payee_id, supplier_bank_detail_id, person_payment_detail_id, debit_account_id, created_by, invoice_ref, invoice_date, description, priority, total_amount, payment_method,
+                                       amount_input_mode, entered_amount, vat_rate_id, withholding_applied)
+         VALUES ($1,$2::payee_type,$3,$4,$15,$5,$6,$7,$8,$9,$10::date,$11,$12,$13::numeric,$14::payment_method,$16,$13::numeric,$17,$18) RETURNING id`,
+        [companyId, ot ? "ONE_TIME" : person ? "PERSON" : "SUPPLIER", supplier ? payeeId : null, person ? payeeId : null, supplier ? details : null, person ? details : null, str(f, "account") || null, uid, str(f, "invoice_ref") || null, str(f, "invoice_date") || null, str(f, "description") || null, str(f, "priority") || "NORMAL", t.entered, method, otId,
+         t.mode, t.vatRateId, t.withholding]))[0].id;
+      await writeInstallments(tx, rid, inst);
       if (file instanceof File && file.size > 0) await saveAttachment(tx, uid, rid, file, "INVOICE");
       return rid;
     }));
@@ -145,9 +172,22 @@ export async function adjustRequest(f: FormData) {
   return act(`/requests/${id}`, "Adjustment saved. Anything that needs a new review has been sent back.", guard(["payment_request:verify", "payment_request:authenticate"], (uid) => {
     const changes: Record<string, unknown> = {};
     for (const k of ["priority", "invoice_ref", "description"]) if (str(f, k) !== str(f, "orig_" + k)) changes[k] = str(f, k);
-    if (num(f, "total_amount") !== num(f, "orig_total_amount")) changes.total_amount = num(f, "total_amount");
+    if (str(f, "taxed") === "1") {
+      // A request with a tax breakdown: the reviewer changes its inputs and the database recalculates the figures with the request's own snapshot.
+      const entered = parseCents(str(f, "entered_amount"));
+      if (entered === null || entered <= 0n) throw new WorkflowError(422, "Enter the amount as a number above zero with at most two decimal places.");
+      if (entered !== parseCents(str(f, "orig_entered_amount"))) changes.entered_amount = centsToPlain(entered);
+      if (str(f, "vat_rate_id") && str(f, "vat_rate_id") !== str(f, "orig_vat_rate_id")) changes.vat_rate_id = str(f, "vat_rate_id");
+      const wht = f.get("withholding_applied") === "on";
+      if (wht !== (str(f, "orig_withholding_applied") === "true")) changes.withholding_applied = wht;
+    } else if (num(f, "total_amount") !== num(f, "orig_total_amount")) changes.total_amount = num(f, "total_amount");
     const seqs = f.getAll("seq").map(String), amts = f.getAll("i_amount").map(String), dues = f.getAll("i_due").map(String), oa = f.getAll("o_amount").map(String), od = f.getAll("o_due").map(String);
-    const insts = seqs.flatMap((s, i) => { const c: Record<string, unknown> = { seq: Number(s) }; if (Number(amts[i]) !== Number(oa[i])) c.amount = Number(amts[i]); if (dues[i] !== od[i]) c.due_date = dues[i]; return Object.keys(c).length > 1 ? [c] : []; });
+    const insts = seqs.flatMap((s, i) => {
+      const c: Record<string, unknown> = { seq: Number(s) }; const a = parseCents(amts[i]);
+      if (a === null) throw new WorkflowError(422, "Enter each installment amount with at most two decimal places.");
+      if (a !== parseCents(oa[i])) c.amount = centsToPlain(a); if (dues[i] !== od[i]) c.due_date = dues[i];
+      return Object.keys(c).length > 1 ? [c] : [];
+    });
     if (insts.length) changes.installments = insts;
     return runWorkflow(uid, id, "adjust", { version: Number(str(f, "version")), reason: str(f, "reason"), changes });
   }));
@@ -271,8 +311,7 @@ export async function saveAndScheduleDraft(f: FormData) { return saveExistingDra
 
 /** Writes the edit form onto a draft the caller created, in the caller's transaction. Row-level security allows only the creator's own drafts. */
 async function applyDraftEdits(tx: Tx, uid: string, f: FormData, id: string) {
-  const dues = f.getAll("due").map(String), amts = f.getAll("amt").map(String);
-  const inst = dues.map((d, i) => ({ d, a: Number(amts[i]) })).filter((x) => x.d && x.a > 0);
+  const { t, inst } = amountFields(f);
   const file = f.get("invoice");
   const cur = (await tx.q<{ debtor_company_id: string; payee_type: string; person_payee_id: string | null }>("SELECT debtor_company_id, payee_type::text AS payee_type, person_payee_id FROM payment_requests WHERE id = $1", [id]))[0];
   if (!cur) throw new WorkflowError(404, "Request not found.");
@@ -281,11 +320,14 @@ async function applyDraftEdits(tx: Tx, uid: string, f: FormData, id: string) {
   // A one-time payee is corrected by pointing the draft at newly entered details; the earlier ones stay on record and the change is audited.
   if (oneTime) { const ot = oneTimeFields(f); await tx.q("SELECT one_time_payee_revise($1,$2,$3,$4,$5,$6)", [id, ot.name, ot.phone, ot.bank, ot.last4, ot.enc]); }
   const details = oneTime ? null : person ? await personDetail(tx, cur.person_payee_id!, method) : await supplierDetail(tx, supplierId!, method);
-  const n = await tx.q("UPDATE payment_requests SET supplier_id = $2, supplier_bank_detail_id = $3, person_payment_detail_id = $11, invoice_ref = $4, invoice_date = $5::date, description = $6, priority = $7, total_amount = $8, debit_account_id = $9, payment_method = $10::payment_method WHERE id = $1 RETURNING id",
-    [id, supplierId, person || oneTime ? null : details, str(f, "invoice_ref") || null, str(f, "invoice_date") || null, str(f, "description") || null, str(f, "priority") || "NORMAL", inst.reduce((s, x) => s + x.a, 0) || 1, str(f, "account") || null, method, person ? details : null]);
+  // Saving a draft takes a fresh snapshot of the current tax settings (app.tax_refresh); the trigger recalculates and sets the net total.
+  await tx.q("SELECT set_config('app.tax_refresh', 'on', true)");
+  const n = await tx.q("UPDATE payment_requests SET supplier_id = $2, supplier_bank_detail_id = $3, person_payment_detail_id = $11, invoice_ref = $4, invoice_date = $5::date, description = $6, priority = $7, debit_account_id = $9, payment_method = $10::payment_method, amount_input_mode = $12, entered_amount = $8::numeric, vat_rate_id = $13, withholding_applied = $14 WHERE id = $1 RETURNING id",
+    [id, supplierId, person || oneTime ? null : details, str(f, "invoice_ref") || null, str(f, "invoice_date") || null, str(f, "description") || null, str(f, "priority") || "NORMAL", t.entered, str(f, "account") || null, method, person ? details : null, t.mode, t.vatRateId, t.withholding]);
+  await tx.q("SELECT set_config('app.tax_refresh', 'off', true)");
   if (!n.length) throw new WorkflowError(403, "This request can no longer be edited by you.");
   await tx.q("DELETE FROM payment_installments WHERE request_id = $1", [id]);
-  for (const [i, x] of inst.entries()) await tx.q("INSERT INTO payment_installments (request_id, seq, due_date, amount) VALUES ($1,$2,$3::date,$4)", [id, i + 1, x.d, x.a]);
+  await writeInstallments(tx, id, inst);
   if (file instanceof File && file.size > 0) {
     const old = (await tx.q<{ id: string }>("SELECT a.id FROM attachments a WHERE a.request_id = $1 AND a.kind = 'INVOICE' AND NOT EXISTS (SELECT 1 FROM attachments b WHERE b.supersedes_id = a.id) ORDER BY a.uploaded_at DESC LIMIT 1", [id]))[0];
     await saveAttachment(tx, uid, id, file, "INVOICE", old?.id);

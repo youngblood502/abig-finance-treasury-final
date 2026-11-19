@@ -165,6 +165,32 @@ export async function retryNotification(f: FormData) {
   }));
 }
 
+// ---------- Tax settings ----------
+// The database functions check again that the caller is a system administrator, validate, and audit the previous and new values.
+const TAX = "/admin?tab=tax";
+/** A percentage or amount as typed, sent as the exact string: never through floating point. */
+const decimal = (f: FormData, k: string, what: string) => { const v = str(f, k).replace(/,/g, ""); if (!/^\d+(\.\d+)?$/.test(v)) throw new WorkflowError(422, `Enter ${what} as a number.`); return v; };
+export async function addVatRate(f: FormData) {
+  return done(TAX, "VAT rate added.", () => admin((tx) => tx.q("SELECT admin_vat_rate_add($1,$2::numeric)", [str(f, "name"), decimal(f, "rate", "the percentage")])));
+}
+export async function updateVatRate(f: FormData) {
+  if (!isUuid(str(f, "id"))) return done(TAX, "", async () => { throw new WorkflowError(404, "VAT rate not found."); });
+  return done(TAX, "VAT rate saved. Requests already saved keep the rate they recorded.", () => admin((tx) => tx.q("SELECT admin_vat_rate_update($1,$2,$3::numeric)", [str(f, "id"), str(f, "name"), decimal(f, "rate", "the percentage")])));
+}
+export async function setVatRateActive(f: FormData) {
+  const on = str(f, "active") === "true";
+  if (!isUuid(str(f, "id"))) return done(TAX, "", async () => { throw new WorkflowError(404, "VAT rate not found."); });
+  return done(TAX, on ? "VAT rate reactivated." : "VAT rate deactivated. It can no longer be chosen; requests that recorded it keep it.", () => admin((tx) => tx.q("SELECT admin_vat_rate_set_active($1,$2)", [str(f, "id"), on])));
+}
+export async function setDefaultVatRate(f: FormData) {
+  if (!isUuid(str(f, "id"))) return done(TAX, "", async () => { throw new WorkflowError(404, "VAT rate not found."); });
+  return done(TAX, "Default VAT rate changed.", () => admin((tx) => tx.q("SELECT admin_vat_rate_set_default($1)", [str(f, "id")])));
+}
+export async function saveWithholding(f: FormData) {
+  return done(TAX, "Withholding tax settings saved. Requests already saved keep the settings they recorded.", () => admin((tx) =>
+    tx.q("SELECT admin_withholding_update($1::numeric,$2::numeric)", [decimal(f, "rate", "the percentage"), decimal(f, "threshold", "the threshold")])));
+}
+
 // ---------- Email settings ----------
 /**
  * Saves the mail server settings. The password is encrypted here, on the server, before it goes to the database; an empty password field keeps the saved one.

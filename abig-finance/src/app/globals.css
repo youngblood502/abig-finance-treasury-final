@@ -52,3 +52,10 @@
 @layer base {
   *, ::before, ::after, ::backdrop { box-sizing: border-box; border: 0 solid var(--border); }
 }
+
+/* The payment voucher's print page prints the voucher alone: no header, sidebar or buttons. */
+@media print {
+  body:has(.voucher-print) header, body:has(.voucher-print) aside, .no-print { display: none !important; }
+  body:has(.voucher-print) { background: #fff; }
+  .voucher-print { border: 0 !important; box-shadow: none !important; padding: 0 !important; }
+}
