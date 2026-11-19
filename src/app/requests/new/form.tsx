@@ -1,24 +1,21 @@
 "use client";
 import { useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
 import { createAndScheduleRequest, createAndSubmitRequest, createRequest } from "../../actions";
+import { AmountEntry } from "@/components/requests/amount-entry";
 import { ScheduleField } from "@/components/requests/schedule-field";
-import { AmountInput } from "@/components/ui/amount-input";
-import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { accountPlace, etb, METHODS_FOR_KIND, PAYMENT_METHODS } from "@/lib/format";
 import type { FormAccount, FormCompany, FormPayee } from "@/lib/requests";
+import { centsToPlain, etbCents, type TaxOptions } from "@/lib/tax";
 
 const Step = ({ title, children }: { title: string; children: React.ReactNode }) => <section className="mb-3 rounded-xl border bg-card p-4"><h2 className="mt-0">{title}</h2>{children}</section>;
-let nextRow = 1;
-const newRow = () => ({ key: nextRow++, due: "", amount: "" });
 
 /**
  * Company, then payee, then method and account. Every field keeps the name createRequest has always read.
  * The payee is a registered supplier or person, or a one-time payee entered here (name required; phone and bank details as the method needs).
  */
-export default function NewRequestForm({ payees, accounts, companies: allowed, startCompany, canSchedule = false }: { payees: FormPayee[]; accounts: FormAccount[]; companies: FormCompany[]; startCompany: string | null; canSchedule?: boolean }) {
+export default function NewRequestForm({ payees, accounts, companies: allowed, startCompany, canSchedule = false, tax }: { payees: FormPayee[]; accounts: FormAccount[]; companies: FormCompany[]; startCompany: string | null; canSchedule?: boolean; tax: TaxOptions }) {
   const companies: [string, string][] = allowed.map((c) => [c.id, c.name]);
   const [companyId, setCompanyId] = useState(companies.some(([id]) => id === startCompany) ? startCompany! : companies[0][0]);
   const [mode, setMode] = useState<"registered" | "one_time">(payees.length === 0 ? "one_time" : "registered");
@@ -26,7 +23,8 @@ export default function NewRequestForm({ payees, accounts, companies: allowed, s
   const [target, setTarget] = useState("");
   const [method, setMethod] = useState("TRANSFER");
   const [accountId, setAccountId] = useState("");
-  const [rows, setRows] = useState(() => [newRow()]);
+  const [net, setNet] = useState<bigint | null>(null);
+  const [firstDue, setFirstDue] = useState<string | undefined>(undefined);
 
   const payeeOptions = payees.filter((p) => p.company_id === companyId).map((p) => ({
     value: `${p.company_id}|${p.payee_type}|${p.payee_id}`, label: p.payee, hint: p.payee_type === "PERSON" ? "Person" : p.bank_ok ? "Supplier" : "Supplier, no verified bank details: cash or cheque",
@@ -35,9 +33,8 @@ export default function NewRequestForm({ payees, accounts, companies: allowed, s
   const ready = mode === "one_time" ? otName.trim() !== "" : target !== "";
   const usable = accounts.filter((a) => a.company_id === companyId && METHODS_FOR_KIND[a.account_kind]?.includes(method));
   const account = usable.find((a) => a.id === accountId);
-  const total = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-  const over = account !== undefined && total > account.available_balance;
-  const update = (key: number, change: Partial<{ due: string; amount: string }>) => setRows((p) => p.map((r) => (r.key === key ? { ...r, ...change } : r)));
+  // Display only: the database decides whether the net fits the available balance when the request is submitted.
+  const over = account !== undefined && net !== null && Number(centsToPlain(net)) > account.available_balance;
 
   return (
     <form action={createRequest}>
@@ -76,26 +73,17 @@ export default function NewRequestForm({ payees, accounts, companies: allowed, s
         <label className="f mt-3">Notes<textarea name="description" rows={2} /></label>
       </Step>
 
-      <Step title="Installments">
-        <div className="flex flex-col gap-3">
-          {rows.map((r, i) => (
-            <div key={r.key} className="grid items-end gap-2 sm:grid-cols-[1fr_1fr_auto]">
-              <label className="f">Due date {i + 1}<input name="due" type="date" required value={r.due} onChange={(e) => update(r.key, { due: e.target.value })} /></label>
-              <AmountInput name="amt" label={`Amount ${i + 1}`} required value={r.amount} onChange={(amount) => update(r.key, { amount })} />
-              <Button type="button" variant="outline" size="icon" aria-label={`Remove installment ${i + 1}`} disabled={rows.length === 1} onClick={() => setRows((p) => p.filter((x) => x.key !== r.key))}><Trash2 /></Button>
-            </div>
-          ))}
-          <div><Button type="button" variant="outline" size="sm" onClick={() => setRows((p) => [...p, newRow()])}><Plus />Add installment</Button></div>
-        </div>
+      <Step title="Amount and tax">
+        <AmountEntry options={tax} initial={{ mode: "BEFORE_VAT", entered: "", vatRateId: null, withholding: false }} installments={[]} onNet={setNet} onFirstDue={setFirstDue} />
         <div role="status" className="mt-3 rounded-md border bg-background p-3 text-sm">
-          Total to reserve: <b>{etb(total)}</b>
+          To reserve (the net payment): <b>{net === null ? "—" : etbCents(net)}</b>
           {account ? <> · Available on this account: <b>{etb(account.available_balance)}</b></> : " · choose an account to see what is available"}
         </div>
         {account && account.shortfall_amount > 0 && <div role="alert" className="note bad mt-2">This account is in shortfall by {etb(account.shortfall_amount)}, so new submissions are blocked. You can save a draft.</div>}
         {over && account.shortfall_amount === 0 && <div role="alert" className="note bad mt-2">The total is more than the available balance. You can save a draft, but it cannot be submitted until the account has enough.</div>}
       </Step>
 
-      {canSchedule && <Step title="Or schedule it"><ScheduleField firstDue={rows.map((r) => r.due).filter(Boolean).sort()[0]} /></Step>}
+      {canSchedule && <Step title="Or schedule it"><ScheduleField firstDue={firstDue} /></Step>}
 
       <div className="flex flex-wrap gap-2">
         <SubmitButton formAction={createAndSubmitRequest} disabled={!ready}>Save and submit (reserve funds)</SubmitButton>

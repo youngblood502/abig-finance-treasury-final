@@ -79,6 +79,20 @@ WITH checks AS (
     + coalesce(has_table_privilege('abig_worker', to_regclass('email_settings'), 'SELECT,INSERT,UPDATE,DELETE'), false)::int)::bigint
   UNION ALL SELECT 'supplier bank details whose active status disagrees with their status history', count(*) FROM supplier_bank_details d
      WHERE d.is_active IS DISTINCT FROM COALESCE((SELECT e.action = 'REACTIVATED' FROM supplier_bank_detail_status_events e WHERE e.detail_id = d.id ORDER BY e.occurred_at DESC, e.id DESC LIMIT 1), true)
+  -- Tax snapshots: the stored figures are exactly what the calculation gives from the stored inputs and rates, and the net is what is paid.
+  UNION ALL SELECT 'request whose tax figures differ from a recalculation of its snapshot', count(*) FROM payment_requests r
+     CROSS JOIN LATERAL tax_figures(r.amount_input_mode, r.entered_amount, r.vat_rate_percent, r.withholding_applied, r.withholding_rate_percent,
+                                    CASE WHEN r.withholding_applied THEN r.withholding_threshold ELSE NULL END) f
+     WHERE r.amount_input_mode IS NOT NULL AND (f.amount_before_vat, f.vat_amount, f.gross_amount, f.withholding_amount, f.net_amount)
+           IS DISTINCT FROM (r.amount_before_vat, r.vat_amount, r.gross_amount, r.withholding_amount, r.total_amount)
+  -- Only requests with a tax breakdown, and their installments: older requests keep their numeric(19,4) values as they were.
+  UNION ALL SELECT 'request with a tax breakdown, or one of its installments, with an amount of more than two decimal places', (
+     (SELECT count(*) FROM payment_requests WHERE amount_input_mode IS NOT NULL
+        AND (total_amount <> round(total_amount, 2) OR entered_amount <> round(entered_amount, 2) OR amount_before_vat <> round(amount_before_vat, 2) OR vat_amount <> round(vat_amount, 2)
+             OR gross_amount <> round(gross_amount, 2) OR withholding_amount <> round(withholding_amount, 2) OR withholding_threshold <> round(withholding_threshold, 2)))
+     + (SELECT count(*) FROM payment_installments i JOIN payment_requests r ON r.id = i.request_id WHERE r.amount_input_mode IS NOT NULL AND i.amount <> round(i.amount, 2)))::bigint
+  UNION ALL SELECT 'application role can read or write the tax settings tables directly', (coalesce(has_table_privilege('abig_app', to_regclass('tax_vat_rates'), 'SELECT,INSERT,UPDATE,DELETE'), false)::int
+    + coalesce(has_table_privilege('abig_app', to_regclass('tax_withholding_settings'), 'SELECT,INSERT,UPDATE,DELETE'), false)::int)::bigint
   UNION ALL SELECT 'person holding a company-limited role in more companies than the role allows', count(*) FROM (
     SELECT cm.user_id, mr.role_id FROM membership_roles mr JOIN company_memberships cm ON cm.id = mr.membership_id AND cm.revoked_at IS NULL JOIN roles r ON r.id = mr.role_id
      WHERE r.max_companies IS NOT NULL GROUP BY cm.user_id, mr.role_id, r.max_companies HAVING count(DISTINCT cm.company_id) > r.max_companies) x

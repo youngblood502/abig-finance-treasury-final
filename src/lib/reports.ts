@@ -2,6 +2,7 @@ import { accountInCompany } from "./company";
 import type { Tx } from "./db";
 import { addisDate, PAYMENT_METHODS } from "./format";
 import type { AccessLevel } from "./treasury-screens";
+import { centsToPlain, parseCents } from "./tax";
 
 // One place for the report queries, used by the Reports page and the CSV export, so the two can never show different things.
 // They read through row-level security and the database's masked functions, so every person gets only the companies and accounts they may see.
@@ -10,7 +11,7 @@ import type { AccessLevel } from "./treasury-screens";
 // or what an audit entry recorded. `MEMBER` is that line: a value below it comes back empty, in the query itself, for the page and the export alike.
 const member = (company: string) => `${company} IN (SELECT app_member_companies())`;
 
-export const REPORT_TABS: [string, string][] = [["pending", "Waiting for payment"], ["payments", "Payments"], ["outstanding", "Outstanding by age"], ["weeks", "Reconciliation and deposits"], ["cash", "Cash and commitments"], ["audit", "Audit trail"]];
+export const REPORT_TABS: [string, string][] = [["pending", "Waiting for payment"], ["payments", "Payments"], ["tax", "VAT and withholding"], ["outstanding", "Outstanding by age"], ["weeks", "Reconciliation and deposits"], ["cash", "Cash and commitments"], ["audit", "Audit trail"]];
 export const BUCKETS = ["Not yet due", "1-30 days overdue", "31-60 days overdue", "Over 60 days overdue"];
 export const AGE_BUCKETS = ["Under 7 days", "7 to 13 days", "14 to 30 days", "Over 30 days"];
 export const ageBucket = (days: number) => AGE_BUCKETS[days < 7 ? 0 : days < 14 ? 1 : days <= 30 ? 2 : 3];
@@ -38,11 +39,31 @@ export const pendingRows = (tx: Tx, company: string | null = null) => tx.q<Pendi
      LEFT JOIN company_bank_accounts da ON da.id = r.debit_account_id
     WHERE r.workflow_state IN ('RESERVED', 'VERIFIED') AND ($1::uuid IS NULL OR r.debtor_company_id = $1) ORDER BY i.due_date, r.request_no, i.seq`, [company]);
 
-export interface PaymentRow { authenticated_at: Date; request_no: string; company_name: string; payee_name: string | null; account_label: string | null; amount: string; workflow_state: string; payment_method: string; verified_by: string | null; authenticated_by: string | null }
+export interface TaxRow { authenticated_at: Date; request_no: string; company_name: string; payee_name: string | null; workflow_state: string; recorded: boolean; vat_rate_name: string | null; vat_rate_percent: string | null;
+  amount_before_vat: string | null; vat_amount: string | null; gross_amount: string | null; withholding_rate_percent: string | null; withholding_amount: string | null; net_amount: string }
+/**
+ * Tax on payments made in the period (Authenticated and Paid, by authentication date, like the Payments report): the snapshot each request
+ * recorded, never today's settings. A request from before tax configuration has no breakdown (recorded = false); its net payment still counts.
+ */
+export const taxRows = (tx: Tx, f: Pick<ReportFilters, "from" | "to" | "q">, company: string | null = null) => tx.q<TaxRow>(
+  `SELECT r.authenticated_at, r.request_no, c.legal_name AS company_name, CASE WHEN ${member("r.debtor_company_id")} THEN COALESCE(s.legal_name, p.full_name, ot.full_name) END AS payee_name, r.workflow_state::text AS workflow_state,
+          r.amount_input_mode IS NOT NULL AS recorded, r.vat_rate_name, r.vat_rate_percent::text AS vat_rate_percent, r.amount_before_vat::text AS amount_before_vat, r.vat_amount::text AS vat_amount, r.gross_amount::text AS gross_amount,
+          CASE WHEN r.withholding_applied THEN r.withholding_rate_percent::text END AS withholding_rate_percent, r.withholding_amount::text AS withholding_amount, r.total_amount::text AS net_amount
+     FROM payment_requests r JOIN companies c ON c.id = r.debtor_company_id LEFT JOIN suppliers s ON s.id = r.supplier_id LEFT JOIN person_payees p ON p.id = r.person_payee_id LEFT JOIN one_time_payees ot ON ot.id = r.one_time_payee_id
+    WHERE r.workflow_state IN ('AUTHENTICATED', 'PAID') AND r.authenticated_at >= $1::date AND r.authenticated_at < $2::date + 1 AND ($3::uuid IS NULL OR r.debtor_company_id = $3)
+      AND ($4::text IS NULL OR r.request_no ILIKE '%' || $4 || '%' OR c.legal_name ILIKE '%' || $4 || '%' OR (${member("r.debtor_company_id")} AND COALESCE(s.legal_name, p.full_name, ot.full_name) ILIKE '%' || $4 || '%'))
+    ORDER BY r.authenticated_at DESC`, [f.from, f.to, company, f.q]);
+/** Exact sum of stored two-decimal amounts, as text: no floating point. Nulls count as zero. */
+export const sumText = (values: (string | null)[]) => { const c = values.reduce((s, v) => s + (parseCents(v) ?? 0n), 0n); return centsToPlain(c); };
+
+export interface PaymentRow { authenticated_at: Date; request_no: string; company_name: string; payee_name: string | null; account_label: string | null; amount: string; workflow_state: string; payment_method: string; verified_by: string | null; authenticated_by: string | null;
+  /** The tax snapshot, for the export's last columns. Null for requests from before tax configuration. */
+  gross_amount: string | null; vat_amount: string | null; withholding_amount: string | null }
 /** Authenticated and Paid requests: the account was debited. Authenticated ones are not yet confirmed by the bank. A search cannot reach a payee the person may not see. */
 export const paymentRows = (tx: Tx, f: Pick<ReportFilters, "from" | "to" | "q" | "method" | "state">, company: string | null = null) => tx.q<PaymentRow>(
   `SELECT r.authenticated_at, r.request_no, c.legal_name AS company_name, CASE WHEN ${member("r.debtor_company_id")} THEN COALESCE(s.legal_name, p.full_name, ot.full_name) END AS payee_name, da.account_label AS account_label, r.total_amount AS amount, r.workflow_state::text AS workflow_state, r.payment_method::text AS payment_method,
-          CASE WHEN ${member("r.debtor_company_id")} THEN vu.full_name END AS verified_by, CASE WHEN ${member("r.debtor_company_id")} THEN au.full_name END AS authenticated_by
+          CASE WHEN ${member("r.debtor_company_id")} THEN vu.full_name END AS verified_by, CASE WHEN ${member("r.debtor_company_id")} THEN au.full_name END AS authenticated_by,
+          r.gross_amount::text AS gross_amount, r.vat_amount::text AS vat_amount, r.withholding_amount::text AS withholding_amount
      FROM payment_requests r JOIN companies c ON c.id = r.debtor_company_id LEFT JOIN suppliers s ON s.id = r.supplier_id LEFT JOIN person_payees p ON p.id = r.person_payee_id LEFT JOIN one_time_payees ot ON ot.id = r.one_time_payee_id
      LEFT JOIN company_bank_accounts da ON da.id = r.debit_account_id LEFT JOIN users vu ON vu.id = r.verified_by LEFT JOIN users au ON au.id = r.authenticated_by
     WHERE r.workflow_state IN ('AUTHENTICATED', 'PAID') AND r.authenticated_at >= $1::date AND r.authenticated_at < $2::date + 1 AND ($3::uuid IS NULL OR r.debtor_company_id = $3)
