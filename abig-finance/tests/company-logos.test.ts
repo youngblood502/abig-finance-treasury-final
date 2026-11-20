@@ -351,6 +351,12 @@ describe("the logo on payment vouchers", () => {
     expect(tables).toHaveLength(2);
     for (const t of tables) expect(t.split(" ")).toContain("no-stack");
     expect(html).toContain("voucher-signatures");
+    // On a phone the header stacks (company above the title block); from the sm width up, A4 print included, the two sit side by side.
+    const head = html.match(/<div class="(voucher-head [^"]*)"/)![1].split(" ");
+    expect(head).toEqual(expect.arrayContaining(["flex", "flex-col", "sm:flex-row", "sm:justify-between"]));
+    expect(head).not.toContain("justify-between");
+    const titleBlock = html.match(/<div class="([^"]*)"><div class="text-xl font-bold text-primary">PAYMENT VOUCHER/)![1].split(" ");
+    expect(titleBlock).toEqual(["sm:shrink-0", "sm:text-right"]);
   });
   it("falls back to the company code, never the ABIG logo, when the company has no logo", async () => {
     expect(await call(user.admin, actions.removeCompanyLogo, { company: ASKU })).toMatchObject({ err: null });
