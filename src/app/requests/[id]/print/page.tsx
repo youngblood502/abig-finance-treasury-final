@@ -30,13 +30,14 @@ export default async function PrintVoucher({ params }: { params: Promise<{ id: s
     <>
       <div className="no-print mb-3 flex flex-wrap gap-2"><PrintButton /><Button asChild variant="outline"><Link href={`/requests/${id}`}>Back to the request</Link></Button></div>
       <article className="voucher-print mx-auto max-w-3xl rounded-xl border bg-card p-6 text-foreground">
-        <div className="voucher-head flex items-start justify-between gap-4 border-b-2 border-primary pb-3">
-          {/* The paying company's own logo, or its code: never another company's logo or the group's. */}
+        <div className="voucher-head flex flex-col gap-3 border-b-2 border-primary pb-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+          {/* The paying company's own logo, or its code: never another company's logo or the group's. On a phone the title block sits below it;
+              from the sm width up (A4 print included) the two sit side by side. */}
           <div className="flex min-w-0 flex-1 items-start gap-3">
             <CompanyMark companyId={v.companyId} code={v.companyCode} logo={v.logo} />
             <div className="min-w-0"><div className="break-words text-lg font-bold">{v.company}</div><div className="text-xs text-muted-foreground">TIN: {v.companyTin ?? "Not recorded"}</div></div>
           </div>
-          <div className="shrink-0 text-right"><div className="text-xl font-bold text-primary">PAYMENT VOUCHER</div><div className="text-sm">No. {v.requestNo}</div><div className="text-sm">Date: {v.createdOn}</div><div className="text-sm">Status: {v.status}</div></div>
+          <div className="sm:shrink-0 sm:text-right"><div className="text-xl font-bold text-primary">PAYMENT VOUCHER</div><div className="text-sm">No. {v.requestNo}</div><div className="text-sm">Date: {v.createdOn}</div><div className="text-sm">Status: {v.status}</div></div>
         </div>
         <dl className="my-4 grid gap-3 sm:grid-cols-2">
           <Fact label="Pay to" value={v.payee ?? "Not shown"} /><Fact label="Payee TIN" value={hidden(v.payeeTin, "Not recorded")} />
