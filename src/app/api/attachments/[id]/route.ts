@@ -12,7 +12,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   // Row-level security hides attachments the user may not see, so "not visible" and "does not exist" look the same.
   const file = await withUser(await currentUserId(), (tx) => requestDocument(tx, id));
   if (!file) return new Response("Not found", { status: 404 });
-  const body = await getObject(file.object_key);
+  // A recorded file that is not in storage (the demo data's invoices, for one) reads as not found. Any other storage failure is a real error.
+  let body: Buffer;
+  try { body = await getObject(file.object_key); }
+  catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return new Response("Not found", { status: 404, headers: { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" } });
+    throw e;
+  }
   return new Response(new Uint8Array(body), { headers: {
     "Content-Type": file.mime_type,
     "Content-Disposition": `attachment; filename="${file.filename.replace(/[^\w.\- ]/g, "_")}"`,
