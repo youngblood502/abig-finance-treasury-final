@@ -53,9 +53,24 @@
   *, ::before, ::after, ::backdrop { box-sizing: border-box; border: 0 solid var(--border); }
 }
 
-/* The payment voucher's print page prints the voucher alone: no header, sidebar or buttons. */
+/*
+ * The payment voucher's print page prints the voucher alone: no header, sidebar, banner or buttons, on A4 with the PDF's margins
+ * (48pt is about 17mm), in the light colours whatever theme the person uses, with its shading kept, and without splitting a row or the
+ * signatures across pages.
+ */
 @media print {
+  @page { size: A4 portrait; margin: 17mm; }
   body:has(.voucher-print) header, body:has(.voucher-print) aside, .no-print { display: none !important; }
-  body:has(.voucher-print) { background: #fff; }
-  .voucher-print { border: 0 !important; box-shadow: none !important; padding: 0 !important; }
+  html:has(.voucher-print), body:has(.voucher-print) { background: #fff !important; }
+  body:has(.voucher-print) main { padding: 0 !important; max-width: none !important; }
+  body:has(.voucher-print) .min-h-dvh { display: block !important; min-height: 0 !important; }
+  .voucher-print {
+    --background: #ffffff; --foreground: #16261b; --card: #ffffff; --card-foreground: #16261b; --primary: #2f7a33; --muted: #ecf1e8;
+    --muted-foreground: #526357; --border: #dce5d6; --line: #dce5d6; --mute: #526357;
+    color: #16261b !important; background: #fff !important; color-scheme: light;
+    border: 0 !important; box-shadow: none !important; padding: 0 !important; margin: 0 !important; max-width: none !important; border-radius: 0 !important;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .voucher-print tr, .voucher-print .voucher-signatures, .voucher-print .voucher-head { break-inside: avoid; page-break-inside: avoid; }
+  .voucher-print h2 { break-after: avoid; page-break-after: avoid; }
 }

@@ -4,16 +4,34 @@ import { cellAmount, type Voucher } from "./voucher";
 // The payment voucher as a genuine .xlsx workbook. Values are the stored database values (two decimals), written as numbers with a #,##0.00
 // format; totals are the stored figures, not spreadsheet formulas, so the file shows exactly what the database holds. Text that could start a
 // formula is written as plain text (ExcelJS writes strings as strings, never as formulas).
+//
+// Printing: A4 portrait with 17mm margins, fitted to the page width but running onto as many pages as it needs (fitToHeight 0), so a long
+// installment list is never shrunk to unreadable text; the title and company rows repeat at the top of every page. The paying company's own
+// logo, when it has one, sits at the top right; without one the workbook simply has no image (never another company's or the group's logo).
 
 const MONEY = '#,##0.00', PCT = '0.00"%"', GREEN = "FF2F7A33", SOFT = "FFEEF5EE";
 
-export async function voucherXlsx(v: Voucher): Promise<Buffer> {
+export interface XlsxOptions { logo?: Buffer | null; logoMime?: "image/png" | "image/jpeg" }
+/** 17mm in inches, the PDF's 48pt margin. */
+const MARGIN = 0.67;
+
+export async function voucherXlsx(v: Voucher, { logo = null, logoMime }: XlsxOptions = {}): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = v.company; wb.title = `Payment voucher ${v.requestNo}`; wb.created = new Date();   // when the workbook was exported
-  const ws = wb.addWorksheet("Payment voucher", { pageSetup: { paperSize: 9, orientation: "portrait", fitToPage: true, fitToWidth: 1 } });
+  const ws = wb.addWorksheet("Payment voucher", { pageSetup: {
+    paperSize: 9, orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0, horizontalCentered: true,
+    margins: { left: MARGIN, right: MARGIN, top: MARGIN, bottom: MARGIN, header: 0.3, footer: 0.3 }, printTitlesRow: "1:2",
+  } });
+  ws.headerFooter.oddFooter = `&L&8Payment voucher No. ${v.requestNo.replace(/&/g, "&&")}&R&8Page &P of &N`;
   ws.columns = [{ width: 38 }, { width: 26 }, { width: 22 }];
   const title = ws.addRow(["PAYMENT VOUCHER"]); title.font = { bold: true, size: 16, color: { argb: GREEN } };
   ws.addRow([v.company]).font = { bold: true, size: 12 };
+  if (logo && logoMime) {
+    try {
+      const image = wb.addImage({ buffer: logo as unknown as ExcelJS.Buffer, extension: logoMime === "image/png" ? "png" : "jpeg" });
+      ws.addImage(image, { tl: { col: 2.55, row: 0.1 }, ext: { width: 56, height: 56 }, editAs: "oneCell" });
+    } catch { /* an unreadable logo leaves the space empty */ }
+  }
   ws.addRow(["Company TIN", v.companyTin ?? "Not recorded"]);
   ws.addRow([]);
   const section = (name: string) => { const r = ws.addRow([name]); r.font = { bold: true, color: { argb: "FFFFFFFF" } }; r.eachCell((c) => { c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: GREEN } }; }); ws.mergeCells(r.number, 1, r.number, 3); };

@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 // Private object storage. Local-disk driver for development; swap for S3-compatible storage (private bucket) in production.
@@ -14,4 +14,9 @@ export async function putObject(key: string, data: Buffer) {
 export async function getObject(key: string): Promise<Buffer> {
   if (!KEY.test(key)) throw new Error("Invalid object key");
   return readFile(join(ROOT, key));
+}
+/** Removes an object that was written for a change that did not go through (its database row was rolled back). A missing object is fine. */
+export async function removeObject(key: string) {
+  if (!KEY.test(key)) throw new Error("Invalid object key");
+  await rm(join(ROOT, key), { force: true });
 }

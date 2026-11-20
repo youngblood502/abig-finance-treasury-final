@@ -93,6 +93,13 @@ WITH checks AS (
      + (SELECT count(*) FROM payment_installments i JOIN payment_requests r ON r.id = i.request_id WHERE r.amount_input_mode IS NOT NULL AND i.amount <> round(i.amount, 2)))::bigint
   UNION ALL SELECT 'application role can read or write the tax settings tables directly', (coalesce(has_table_privilege('abig_app', to_regclass('tax_vat_rates'), 'SELECT,INSERT,UPDATE,DELETE'), false)::int
     + coalesce(has_table_privilege('abig_app', to_regclass('tax_withholding_settings'), 'SELECT,INSERT,UPDATE,DELETE'), false)::int)::bigint
+  -- Company logos: at most one current logo per company, every row describes a private PNG/JPEG object, and only the admin functions write.
+  UNION ALL SELECT 'company with more than one current logo', count(*) FROM (SELECT company_id FROM company_logos WHERE ended_at IS NULL GROUP BY company_id HAVING count(*) > 1) x
+  UNION ALL SELECT 'company logo with an invalid object key, type, size, hash or dimensions', count(*) FROM company_logos
+     WHERE object_key !~ '^[0-9a-f]{64}$' OR mime_type NOT IN ('image/png','image/jpeg') OR size_bytes NOT BETWEEN 1 AND 1048576 OR sha256 !~ '^[0-9a-f]{64}$'
+        OR width NOT BETWEEN 64 AND 2000 OR height NOT BETWEEN 64 AND 2000
+  UNION ALL SELECT 'application role can write the company logo table directly',
+     coalesce(has_table_privilege('abig_app', to_regclass('company_logos'), 'INSERT,UPDATE,DELETE,TRUNCATE'), false)::int::bigint
   UNION ALL SELECT 'person holding a company-limited role in more companies than the role allows', count(*) FROM (
     SELECT cm.user_id, mr.role_id FROM membership_roles mr JOIN company_memberships cm ON cm.id = mr.membership_id AND cm.revoked_at IS NULL JOIN roles r ON r.id = mr.role_id
      WHERE r.max_companies IS NOT NULL GROUP BY cm.user_id, mr.role_id, r.max_companies HAVING count(DISTINCT cm.company_id) > r.max_companies) x
