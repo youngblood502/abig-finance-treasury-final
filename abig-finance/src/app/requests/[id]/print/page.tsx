@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { CompanyMark } from "@/components/company-mark";
 import { PrintButton } from "@/components/requests/print-button";
 import { Button } from "@/components/ui/button";
 import { withUser } from "@/lib/db";
@@ -29,13 +30,13 @@ export default async function PrintVoucher({ params }: { params: Promise<{ id: s
     <>
       <div className="no-print mb-3 flex flex-wrap gap-2"><PrintButton /><Button asChild variant="outline"><Link href={`/requests/${id}`}>Back to the request</Link></Button></div>
       <article className="voucher-print mx-auto max-w-3xl rounded-xl border bg-card p-6 text-foreground">
-        <div className="flex flex-wrap items-start justify-between gap-4 border-b-2 border-primary pb-3">
-          <div className="flex items-center gap-3">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/abig-logo.png" alt="" width={56} height={56} />
-            <div><div className="text-lg font-bold">{v.company}</div><div className="text-xs text-muted-foreground">TIN: {v.companyTin ?? "Not recorded"}</div></div>
+        <div className="voucher-head flex items-start justify-between gap-4 border-b-2 border-primary pb-3">
+          {/* The paying company's own logo, or its code: never another company's logo or the group's. */}
+          <div className="flex min-w-0 flex-1 items-start gap-3">
+            <CompanyMark companyId={v.companyId} code={v.companyCode} logo={v.logo} />
+            <div className="min-w-0"><div className="break-words text-lg font-bold">{v.company}</div><div className="text-xs text-muted-foreground">TIN: {v.companyTin ?? "Not recorded"}</div></div>
           </div>
-          <div className="text-right"><div className="text-xl font-bold text-primary">PAYMENT VOUCHER</div><div className="text-sm">No. {v.requestNo}</div><div className="text-sm">Date: {v.createdOn}</div><div className="text-sm">Status: {v.status}</div></div>
+          <div className="shrink-0 text-right"><div className="text-xl font-bold text-primary">PAYMENT VOUCHER</div><div className="text-sm">No. {v.requestNo}</div><div className="text-sm">Date: {v.createdOn}</div><div className="text-sm">Status: {v.status}</div></div>
         </div>
         <dl className="my-4 grid gap-3 sm:grid-cols-2">
           <Fact label="Pay to" value={v.payee ?? "Not shown"} /><Fact label="Payee TIN" value={hidden(v.payeeTin, "Not recorded")} />
@@ -43,13 +44,13 @@ export default async function PrintVoucher({ params }: { params: Promise<{ id: s
           <Fact label="Invoice" value={hidden(v.invoice, "None")} /><Fact label="Reason" value={hidden(v.description, "None")} />
         </dl>
         <h2 className="mb-1 text-base text-primary">Amount</h2>
-        <table className="w-full border-collapse text-sm"><tbody>
+        <table className="voucher-amounts no-stack w-full border-collapse text-sm"><tbody>
           {lines.map(([k, val, strong]) => <tr key={k} className={`border-b ${strong ? "bg-muted font-semibold" : ""}`}><td className="px-2 py-1.5">{k}</td><td className="px-2 py-1.5 text-right tabular-nums">{val}</td></tr>)}
         </tbody></table>
         {v.tax && <p className="mt-1 text-xs text-muted-foreground">{v.tax.mode}. The net payment is the amount paid from the bank.</p>}
         {v.installments.length > 1 && <><h2 className="mb-1 mt-4 text-base text-primary">Installments</h2>
-          <table className="w-full border-collapse text-sm"><tbody>{v.installments.map((i) => <tr key={i.seq} className="border-b"><td className="px-2 py-1">{i.seq}. Due {i.due}</td><td className="px-2 py-1 text-right tabular-nums">{moneyText(i.amount)}</td></tr>)}</tbody></table></>}
-        <div className="mt-10 grid grid-cols-3 gap-4">
+          <table className="voucher-installments no-stack w-full border-collapse text-sm"><tbody>{v.installments.map((i) => <tr key={i.seq} className="border-b"><td className="px-2 py-1">{i.seq}. Due {i.due}</td><td className="px-2 py-1 text-right tabular-nums">{moneyText(i.amount)}</td></tr>)}</tbody></table></>}
+        <div className="voucher-signatures mt-10 grid grid-cols-3 gap-4">
           {v.signatories.map((s) => <div key={s.role} className="text-sm"><div className="font-semibold">{s.role}</div><div>{s.name ?? (v.restricted ? "Not shown" : "")}</div><div className="text-xs text-muted-foreground">{s.when ?? ""}</div><div className="mt-12 border-t border-foreground pt-1 text-xs text-muted-foreground">Signature</div></div>)}
         </div>
       </article>

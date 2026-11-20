@@ -24,6 +24,10 @@ export function taxLines(r: TaxRow): [string, string, boolean?][] {
 export interface Signatory { role: string; name: string | null; when: string | null }
 export interface Voucher {
   requestNo: string; createdOn: string; company: string; companyTin: string | null; status: string; restricted: boolean;
+  /** The paying company (payment_requests.debtor_company_id), never the owner of the bank account it is paid from. */
+  companyId: string; companyCode: string;
+  /** That company's current logo in private storage, or null (the voucher then shows the company code, never another logo). */
+  logo: { objectKey: string; mime: "image/png" | "image/jpeg"; sha256: string } | null;
   payee: string | null; payeeTin: string | null; method: string; destination: string | null; description: string | null; invoice: string | null;
   /** Null when the request has no tax breakdown (created before tax configuration). */
   tax: null | { mode: string; amountBeforeVat: string; vatName: string; vatPercent: string; vatAmount: string; gross: string; withholdingApplied: boolean; withholdingPercent: string; withholdingAmount: string };
@@ -46,12 +50,17 @@ export async function loadVoucher(tx: Tx, id: string): Promise<Voucher | null> {
   const d = await loadRequest(tx, id);
   if (!d) return null;
   const r = d.r;
-  const x = (await tx.q<{ created_at: Date; tin_number: string | null; verifier: string | null; verified_at: Date | null; authenticator: string | null; authenticated_at: Date | null }>(
-    `SELECT r.created_at, c.tin_number, vu.full_name AS verifier, r.verified_at, au.full_name AS authenticator, r.authenticated_at
-       FROM payment_requests r JOIN companies c ON c.id = r.debtor_company_id LEFT JOIN users vu ON vu.id = r.verified_by LEFT JOIN users au ON au.id = r.authenticated_by WHERE r.id = $1`, [id]))[0];
+  // The company is the request's paying company (debtor_company_id); its logo is that company's current one, read through row-level security.
+  const x = (await tx.q<{ created_at: Date; company_id: string; code: string; tin_number: string | null; verifier: string | null; verified_at: Date | null; authenticator: string | null; authenticated_at: Date | null;
+                          logo_key: string | null; logo_mime: "image/png" | "image/jpeg" | null; logo_sha256: string | null }>(
+    `SELECT r.created_at, c.id AS company_id, c.code, c.tin_number, vu.full_name AS verifier, r.verified_at, au.full_name AS authenticator, r.authenticated_at,
+            l.object_key AS logo_key, l.mime_type AS logo_mime, l.sha256 AS logo_sha256
+       FROM payment_requests r JOIN companies c ON c.id = r.debtor_company_id LEFT JOIN company_logos l ON l.company_id = r.debtor_company_id AND l.ended_at IS NULL
+       LEFT JOIN users vu ON vu.id = r.verified_by LEFT JOIN users au ON au.id = r.authenticated_by WHERE r.id = $1`, [id]))[0];
   const hide = d.restricted;   // a group reporter sees amounts and status, never who handled it
   return {
     requestNo: r.request_no, createdOn: dstr(x.created_at), company: r.company, companyTin: x.tin_number, status: STATE_LABEL[r.workflow_state] ?? r.workflow_state, restricted: hide,
+    companyId: x.company_id, companyCode: x.code, logo: x.logo_key && x.logo_mime && x.logo_sha256 ? { objectKey: x.logo_key, mime: x.logo_mime, sha256: x.logo_sha256 } : null,
     payee: r.payee, payeeTin: r.tin, method: PAYMENT_METHODS[r.payment_method] ?? r.payment_method, destination: hide ? null : destination(r),
     description: r.description, invoice: r.invoice_ref ? `${r.invoice_ref}${r.invoice_date ? `, ${dstr(r.invoice_date)}` : ""}` : null,
     tax: r.amount_input_mode ? {

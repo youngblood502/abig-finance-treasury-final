@@ -1,4 +1,5 @@
 "use server";
+import { randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -9,6 +10,8 @@ import { withUser } from "@/lib/db";
 import { message, translate, WorkflowError } from "@/lib/errors";
 import { emailSettingsProblem, isEmail, sendTestEmail, type EmailSettingsRow } from "@/lib/mail-settings";
 import { COOKIE, currentUserId } from "@/lib/session";
+import { validateLogo } from "@/lib/company-logo";
+import { putObject, removeObject } from "@/lib/storage";
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
 
@@ -123,6 +126,52 @@ export async function createCompany(f: FormData) {
 }
 export async function updateCompany(f: FormData) {
   return done("/admin?tab=companies", "Company saved.", () => admin((tx) => tx.q("SELECT admin_update_company($1,$2,$3,$4,$5)", [str(f, "id"), str(f, "name"), str(f, "tin"), str(f, "phone"), str(f, "active") === "on"])));
+}
+
+/**
+ * Uploads or replaces a company's logo. The file is validated first (its real bytes, type, size, dimensions, and that pdfkit can draw it).
+ * Then, in one transaction, the database records it (admin only, audited) and the file is written to private storage under a new random
+ * key. If anything fails, the transaction rolls back and the new object is deleted, so no row points at a missing file and no file is left
+ * without a row. Replaced files are kept with their history rows.
+ *
+ * An error does not always mean a rollback: the database can commit and the connection drop before its reply arrives. So before deleting
+ * the file, the action asks the database (on a new connection) whether the row was recorded. If it was, the upload succeeded and the file
+ * stays. If that cannot be found out, the file also stays: a stray file nobody points at is harmless, a current logo without its file is not.
+ */
+export async function setCompanyLogo(f: FormData) {
+  const company = str(f, "company");
+  return done("/admin?tab=companies", "Logo saved. Vouchers for this company now show it.", async () => {
+    if (!isUuid(company)) throw new WorkflowError(400, "Choose a company.");
+    const file = f.get("logo");
+    await admin(async () => {});   // only a system administrator gets as far as having a file looked at
+    if (!(file instanceof File) || file.size === 0) throw new WorkflowError(400, "Choose a PNG or JPEG file.");
+    const logo = await validateLogo(file);
+    const key = randomBytes(32).toString("hex");
+    try {
+      await admin(async (tx) => {
+        await tx.q("SELECT admin_company_logo_set($1,$2,$3,$4,$5,$6,$7)", [company, key, logo.mime, logo.size, logo.sha256, logo.width, logo.height]);
+        try { await putObject(key, logo.data); } catch { throw new WorkflowError(503, "The logo could not be stored. Nothing was changed; try again."); }
+      });
+    } catch (e) {
+      const recorded = await logoRecorded(key);
+      if (recorded === true) return;                                  // committed after all: the logo is saved and its file must stay
+      if (recorded === false) await removeObject(key).catch(() => {});   // rolled back: do not leave its file behind
+      else console.error(`company logo upload for ${company}: the outcome is unknown, so its new file was kept (${message(e)})`);
+      throw e;
+    }
+  });
+}
+/** Whether a logo row with this object key exists: true or false, or null when the database cannot be asked. */
+async function logoRecorded(key: string): Promise<boolean | null> {
+  try { return (await admin((tx) => tx.q("SELECT 1 FROM company_logos WHERE object_key = $1", [key]))).length > 0; } catch { return null; }
+}
+/** Removes a company's current logo; its vouchers then show the company code. The history and the stored file are kept. */
+export async function removeCompanyLogo(f: FormData) {
+  const company = str(f, "company");
+  return done("/admin?tab=companies", "Logo removed. Vouchers for this company now show its code.", async () => {
+    if (!isUuid(company)) throw new WorkflowError(400, "Choose a company.");
+    await admin((tx) => tx.q("SELECT admin_company_logo_remove($1)", [company]));
+  });
 }
 
 // ---------- Roles and their permissions ----------

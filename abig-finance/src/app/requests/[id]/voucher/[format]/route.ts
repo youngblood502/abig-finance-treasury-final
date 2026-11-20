@@ -1,3 +1,4 @@
+import { logoBytes } from "@/lib/company-logo";
 import { withUser } from "@/lib/db";
 import { denyApi } from "@/lib/rbac";
 import { currentUserId, requireMe } from "@/lib/session";
@@ -18,7 +19,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const v = await withUser(await currentUserId(), (tx) => loadVoucher(tx, id));
   if (!v) return new Response("Not found", { status: 404 });
   const ext = format as keyof typeof TYPES;
-  const body = ext === "pdf" ? await voucherPdf(v) : await voucherXlsx(v);
+  // The paying company's own logo from private storage; without one (or if it cannot be read) the PDF shows the company code.
+  const logo = await logoBytes(v.logo && { object_key: v.logo.objectKey });
+  const body = ext === "pdf" ? await voucherPdf(v, { logo }) : await voucherXlsx(v, { logo, logoMime: v.logo?.mime });
   return new Response(new Uint8Array(body), { headers: {
     "Content-Type": TYPES[ext], "Content-Disposition": `attachment; filename="${voucherFilename(v, ext)}"`,
     "X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store" } });

@@ -3,6 +3,8 @@ import { Flash } from "@/components";
 import { addVatRate, clearEmailSettings, createCompany, createRole, createUser, saveEmailSettings, saveWithholding, sendEmailTest, setDefaultVatRate, setVatRateActive, updateVatRate } from "../admin-actions";
 import { percentLabel } from "@/lib/tax";
 import { CompanyPanel, RolePanel, SecretNotice } from "@/components/admin/admin-parts";
+import { CompanyMark } from "@/components/company-mark";
+import { currentLogos } from "@/lib/company-logo";
 import { TabLinks } from "@/components/layout/tab-links";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,10 +46,10 @@ async function People({ uid }: { uid: string }) {
 }
 
 async function Companies({ uid }: { uid: string }) {
-  const companies = await withUser(uid, companyList);
-  const columns: DataColumn[] = [{ key: "name", header: "Company", primary: true, sortable: true }, { key: "code", header: "Code", sortable: true }, { key: "tin", header: "TIN" }, { key: "phone", header: "Phone" }, { key: "status", header: "Status" }, { key: "open", header: "" }];
+  const { companies, logos } = await withUser(uid, async (tx) => ({ companies: await companyList(tx), logos: await currentLogos(tx) }));
+  const columns: DataColumn[] = [{ key: "logo", header: "Logo" }, { key: "name", header: "Company", primary: true, sortable: true }, { key: "code", header: "Code", sortable: true }, { key: "tin", header: "TIN" }, { key: "phone", header: "Phone" }, { key: "status", header: "Status" }, { key: "open", header: "" }];
   const rows: DataRow[] = companies.map((c) => ({ id: c.id, search: `${c.legal_name} ${c.code} ${c.tin_number ?? ""}`, sort: { name: c.legal_name, code: c.code }, filters: { status: c.is_active ? "active" : "inactive" },
-    cells: { name: <b>{c.legal_name}</b>, code: c.code, tin: c.tin_number ?? "", phone: c.phone ?? "", status: <Badge variant={c.is_active ? "default" : "destructive"}>{c.is_active ? "Active" : "Inactive"}</Badge>, open: <CompanyPanel c={c} /> } }));
+    cells: { logo: <CompanyMark companyId={c.id} code={c.code} logo={logos.get(c.id) ?? null} size={32} />, name: <b>{c.legal_name}</b>, code: c.code, tin: c.tin_number ?? "", phone: c.phone ?? "", status: <Badge variant={c.is_active ? "default" : "destructive"}>{c.is_active ? "Active" : "Inactive"}</Badge>, open: <CompanyPanel c={c} logo={logos.get(c.id) ?? null} /> } }));
   return <Panel><DataTable caption="Companies" columns={columns} rows={rows} searchable filters={[{ key: "status", label: "Status", options: [{ value: "active", label: "Active" }, { value: "inactive", label: "Inactive" }] }]} emptyMessage="No companies yet." /></Panel>;
 }
 
