@@ -174,9 +174,9 @@
     "semantic_hash": ""
   },
   "abig-finance/src/app/admin-actions.ts": {
-    "mtime": 1795091548.1370506,
-    "seen": 1795094213.9689162,
-    "ast_hash": "90c29b86ff6b86963a8aad7dbc013fd9",
+    "mtime": 1795151782.721172,
+    "seen": 1795358629.2784224,
+    "ast_hash": "4d8b1e7f6c874cf7b4a376ec43eb26a0",
     "semantic_hash": ""
   },
   "abig-finance/src/app/admin/page.tsx": {
@@ -186,9 +186,9 @@
     "semantic_hash": ""
   },
   "abig-finance/src/app/api/attachments/[id]/route.ts": {
-    "mtime": 1794039830.2259097,
-    "seen": 1794041084.1709723,
-    "ast_hash": "d9d602af70eb7a4e63958a07e24a6657",
+    "mtime": 1795156560.3774822,
+    "seen": 1795358629.2784224,
+    "ast_hash": "1b9df2f49f2ffc227819178de4aa7256",
     "semantic_hash": ""
   },
   "abig-finance/src/app/api/health/route.ts": {
@@ -1410,9 +1410,9 @@
     "semantic_hash": ""
   },
   "abig-finance/tests/setup-env.ts": {
-    "mtime": 1794465346.765244,
-    "seen": 1794466372.686826,
-    "ast_hash": "c872c4845e7abdcc788f1bfc73084cbc",
+    "mtime": 1795357046.476661,
+    "seen": 1795358629.2794204,
+    "ast_hash": "936b4c2106efc9d115a30bd31c536baf",
     "semantic_hash": ""
   },
   "abig-finance/tests/test-isolation.test.ts": {
@@ -1512,9 +1512,9 @@
     "semantic_hash": ""
   },
   "abig-finance/src/app/requests/[id]/print/page.tsx": {
-    "mtime": 1795091549.6775076,
-    "seen": 1795094213.9695559,
-    "ast_hash": "ed163508058ad84d72fd124528fc5306",
+    "mtime": 1795153894.2298803,
+    "seen": 1795358629.2784224,
+    "ast_hash": "463e85a16f3d9b27323af607346e6c02",
     "semantic_hash": ""
   },
   "abig-finance/src/app/requests/[id]/voucher/[format]/route.ts": {
@@ -1608,9 +1608,9 @@
     "semantic_hash": ""
   },
   "abig-finance/tests/company-logos.test.ts": {
-    "mtime": 1795091563.9671671,
-    "seen": 1795094213.9760203,
-    "ast_hash": "eeee273072da32094fca291cf4772c1a",
+    "mtime": 1795153909.510556,
+    "seen": 1795358629.2794204,
+    "ast_hash": "484c1000b5df128609487d7ce8cb3b86",
     "semantic_hash": ""
   },
   "abig-finance/tests/images.ts": {
@@ -1623,6 +1623,48 @@
     "mtime": 1795091565.643778,
     "seen": 1795094213.9780228,
     "ast_hash": "5ca0a0785e4f9f6827fc3704580ca0d0",
+    "semantic_hash": ""
+  },
+  "abig-finance/tests/attachment-download.test.ts": {
+    "mtime": 1795156508.7568867,
+    "seen": 1795358629.2794204,
+    "ast_hash": "5f314cf0fdea87fe033370e9d19649a0",
+    "semantic_hash": ""
+  },
+  "abig-finance/docs/payments-letters/01-business-requirements.md": {
+    "mtime": 1795352732.2912574,
+    "seen": 1795358629.2794204,
+    "ast_hash": "3bf681fcd218c368b42828d424d169c0",
+    "semantic_hash": ""
+  },
+  "abig-finance/docs/payments-letters/02-implementation-plan.md": {
+    "mtime": 1795352708.6460445,
+    "seen": 1795358629.2794204,
+    "ast_hash": "b1d911c1bf40191481aa75d791cb4b5c",
+    "semantic_hash": ""
+  },
+  "abig-finance/docs/payments-letters/03-data-migration-and-compatibility.md": {
+    "mtime": 1795352708.6460445,
+    "seen": 1795358629.2794204,
+    "ast_hash": "69f151fd1dcda08eea7bd9bbda1ab36c",
+    "semantic_hash": ""
+  },
+  "abig-finance/docs/payments-letters/04-accounting-and-concurrency.md": {
+    "mtime": 1795352708.6602664,
+    "seen": 1795358629.2794204,
+    "ast_hash": "f9e8e47b0ff51f2d2e1c8dc8cf30e118",
+    "semantic_hash": ""
+  },
+  "abig-finance/docs/payments-letters/05-test-plan.md": {
+    "mtime": 1795352708.66374,
+    "seen": 1795358629.2794204,
+    "ast_hash": "eaf52efe5213dd517a7fb58c9f83ba76",
+    "semantic_hash": ""
+  },
+  "letter template/Asku_letter.jpg": {
+    "mtime": 1795177988.1577022,
+    "seen": 1795358629.2794204,
+    "ast_hash": "4c3597c3f4b58e05a427f0a9c9e60d14",
     "semantic_hash": ""
   },
   "abig-finance/package-lock.json": {
