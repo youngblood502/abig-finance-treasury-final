@@ -7,7 +7,8 @@ const csp = ["default-src 'self'", "script-src 'self' 'unsafe-inline'", "style-s
 const config: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
-  serverExternalPackages: ["pg", "nodemailer"],
+  // pdfkit reads its font metrics from its own folder at run time, so it and exceljs load from node_modules rather than being bundled.
+  serverExternalPackages: ["pg", "nodemailer", "pdfkit", "exceljs"],
   experimental: { serverActions: { bodySizeLimit: "12mb" } },
   async headers() {
     if (!prod) return [];

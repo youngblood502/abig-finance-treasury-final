@@ -8,12 +8,13 @@ import { withUser } from "@/lib/db";
 import { can, requireAccess } from "@/lib/rbac";
 import { requestFormOptions } from "@/lib/requests";
 import { currentUserId, requireMe } from "@/lib/session";
+import { loadTaxOptions } from "@/lib/tax";
 import NewRequestForm from "./form";
 
 export default async function NewRequest({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams; const uid = await currentUserId(); const me = await requireMe(); requireAccess(me, "/requests/new");
   const company = await companyScope(uid);
-  const d = await withUser(uid, requestFormOptions);
+  const d = await withUser(uid, async (tx) => ({ ...(await requestFormOptions(tx)), tax: await loadTaxOptions(tx) }));
   const entering = me.memberships.filter((m) => m.permissions.includes("payee:manage")).map((m) => ({ id: m.company_id, name: m.company }));
   return (
     <>
@@ -21,7 +22,7 @@ export default async function NewRequest({ searchParams }: { searchParams: Promi
         action={entering.length > 0 ? <SidePanel title="Add a person" description="For someone you will pay again. For a single payment, choose One-time payee on the request instead: nothing needs registering." trigger={<Button variant="outline">Add a person</Button>}><div className="mt-3"><AddPersonForm companies={entering} back="request" /></div></SidePanel> : undefined} />
       <Flash sp={sp} />
       {d.companies.length === 0 ? <div className="rounded-xl border bg-card p-4">You can only create requests for a company where you are an Accountant.</div>
-        : <NewRequestForm payees={d.payees} accounts={d.accounts} companies={d.companies} startCompany={company} canSchedule={can(me, "payment_request:schedule")} />}
+        : <NewRequestForm payees={d.payees} accounts={d.accounts} companies={d.companies} startCompany={company} canSchedule={can(me, "payment_request:schedule")} tax={d.tax} />}
     </>
   );
 }

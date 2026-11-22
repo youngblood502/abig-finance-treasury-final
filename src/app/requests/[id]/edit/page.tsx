@@ -2,6 +2,8 @@ import { notFound, redirect } from "next/navigation";
 import { Flash } from "@/components";
 import { saveAndScheduleDraft, saveAndSubmitDraft, saveDraft, saveScheduledChanges } from "../../../actions";
 import { ScheduleField } from "@/components/requests/schedule-field";
+import { AmountEntry } from "@/components/requests/amount-entry";
+import { centsToPlain, loadTaxOptions, parseCents } from "@/lib/tax";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { dstr, etb, PAYMENT_METHODS, accountPlace } from "@/lib/format";
 import { withUser } from "@/lib/db";
@@ -26,6 +28,7 @@ export default async function EditRequest({ params, searchParams }: { params: Pr
       file: (await tx.q<any>("SELECT id, filename FROM attachments a WHERE request_id = $1 AND kind = 'INVOICE' AND NOT EXISTS (SELECT 1 FROM attachments b WHERE b.supersedes_id = a.id) ORDER BY uploaded_at DESC LIMIT 1", [id]))[0],
       suppliers: await tx.q<any>(`SELECT s.id, s.legal_name, EXISTS (SELECT 1 FROM supplier_bank_details b WHERE b.supplier_id = s.id AND b.status = 'VERIFIED' AND b.is_active) AS bank_ok
         FROM company_suppliers cs JOIN suppliers s ON s.id = cs.supplier_id WHERE cs.company_id = $1 AND cs.status = 'ACTIVE' AND s.is_active ORDER BY s.legal_name`, [(await tx.q<any>("SELECT debtor_company_id FROM payment_requests WHERE id = $1", [id]))[0]?.debtor_company_id]),
+      tax: await loadTaxOptions(tx),
     };
   });
   if (!d) notFound();
@@ -34,7 +37,7 @@ export default async function EditRequest({ params, searchParams }: { params: Pr
   const scheduled = r.workflow_state === "SCHEDULED";
   if (r.created_by !== me.id || (r.workflow_state !== "DRAFT" && !scheduled)) redirect(`/requests/${id}`);
   const canSchedule = hasPermission(me, "payment_request:schedule", r.debtor_company_id);
-  const rows = Array.from({ length: Math.max(4, d.inst.length + 1) }, (_, i) => d.inst[i]);
+  const plain = (v: string | null) => (v === null ? "" : centsToPlain(parseCents(v) ?? 0n));
   return (
     <>
       <h1>Edit {r.request_no}</h1><p className="sub">{r.company} · {scheduled ? `scheduled for ${dstr(r.scheduled_for)}` : "draft"}</p><Flash sp={sp} />
@@ -56,12 +59,12 @@ export default async function EditRequest({ params, searchParams }: { params: Pr
           <label className="f">Payment method<select name="payment_method" defaultValue={r.payment_method}>{Object.entries(PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
           <label className="f">Priority<select name="priority" defaultValue={r.priority}><option>LOW</option><option>NORMAL</option><option>HIGH</option><option>URGENT</option></select></label>
         </div>
-        <h2>Installments</h2><p className="mute">Leave a row empty to leave it out. The total is the sum of the rows.</p>
-        {rows.map((x: any, i: number) => (
-          <div className="inline" key={i} style={{ marginBottom: 8 }}>
-            <label className="f">Due date {i + 1}<input name="due" type="date" defaultValue={x ? dstr(x.due_date) : ""} /></label>
-            <label className="f">Amount (ETB) {i + 1}<input name="amt" type="number" min="0.01" step="0.01" defaultValue={x ? Number(x.amount) : ""} /></label>
-          </div>))}
+        <h2>Amount and tax</h2>
+        {!r.amount_input_mode && <p className="mute">This draft has no tax breakdown yet. Its current amount ({etb(r.total_amount)}) is shown as a total including VAT: check the VAT rate and how the amount is entered before saving.</p>}
+        <AmountEntry options={d.tax}
+          initial={r.amount_input_mode ? { mode: r.amount_input_mode, entered: plain(r.entered_amount), vatRateId: r.vat_rate_id, withholding: !!r.withholding_applied } : { mode: "TOTAL", entered: plain(r.total_amount), vatRateId: null, withholding: false }}
+          installments={d.inst.map((x: any) => ({ due: dstr(x.due_date), amount: plain(x.amount) }))} />
+        {r.vat_rate_id && !d.tax.vat.some((v) => v.id === r.vat_rate_id) && <p role="alert" className="note bad">The VAT rate saved on this draft ({r.vat_rate_name}) is no longer in use. Choose another rate before saving.</p>}
         <div className="form" style={{ marginTop: 12 }}>
           <label className="f">Replace the invoice file (leave empty to keep {d.file?.filename ?? "none"})<input name="invoice" type="file" accept="application/pdf,image/png,image/jpeg" /></label>
           <label className="f">Notes<textarea name="description" rows={2} defaultValue={r.description ?? ""} /></label>

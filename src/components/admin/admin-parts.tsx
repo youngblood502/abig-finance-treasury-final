@@ -1,5 +1,9 @@
 import { cookies } from "next/headers";
-import { saveRole, saveRolePermissions, updateCompany } from "@/app/admin-actions";
+import { removeCompanyLogo, saveRole, saveRolePermissions, setCompanyLogo, updateCompany } from "@/app/admin-actions";
+import { CompanyMark } from "@/components/company-mark";
+import type { CurrentLogo } from "@/lib/company-logo";
+import { LOGO_MAX_PX, LOGO_MIN_PX } from "@/lib/logo-url";
+import { dtime } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -15,7 +19,7 @@ export async function SecretNotice() {
   return <div role="status" className="mb-3 rounded-md border bg-card p-3 text-sm"><b className="break-all">{secret}</b><p className="m-0 mt-1 text-muted-foreground">Shown once. Give it to the person privately. They must change it at first sign-in.</p></div>;
 }
 
-export function CompanyPanel({ c }: { c: AdminCompany }) {
+export function CompanyPanel({ c, logo = null }: { c: AdminCompany; logo?: CurrentLogo | null }) {
   const fields = { id: c.id, name: c.legal_name, tin: c.tin_number ?? "", phone: c.phone ?? "" };
   return (
     <SidePanel title={c.legal_name} description={`Code ${c.code}. The code never changes.`} trigger={<Button variant="outline" size="sm">Edit</Button>}>
@@ -24,6 +28,20 @@ export function CompanyPanel({ c }: { c: AdminCompany }) {
         <label className="f">TIN number<input name="tin" defaultValue={c.tin_number ?? ""} required pattern="[0-9A-Za-z\-]{6,20}" /></label>
         <label className="f">Phone<input name="phone" defaultValue={c.phone ?? ""} required /></label>
         <div><SubmitButton>Save</SubmitButton></div></form>
+      <section className="mt-4 border-t pt-3" aria-labelledby={`logo-${c.id}`}><h3 id={`logo-${c.id}`} className="m-0 mb-2 text-base">Logo</h3>
+        <div className="flex items-start gap-3">
+          <CompanyMark companyId={c.id} code={c.code} logo={logo} size={72} />
+          <p className="m-0 text-sm text-muted-foreground">{logo
+            ? `Shown on this company's payment vouchers. ${logo.width} × ${logo.height} pixels, ${(logo.size_bytes / 1024).toFixed(0)} KB, uploaded ${dtime(logo.uploaded_at)}.`
+            : "No logo yet. This company's payment vouchers show its code instead."}</p>
+        </div>
+        <form action={setCompanyLogo} className="mt-3 flex flex-col gap-2"><input type="hidden" name="company" value={c.id} />
+          <label className="f">{logo ? "Replace the logo" : "Upload a logo"}<input type="file" name="logo" accept="image/png,image/jpeg" required /></label>
+          <span className="text-xs text-muted-foreground">PNG or JPEG, at most 1 MB, {LOGO_MIN_PX} to {LOGO_MAX_PX} pixels on each side. A square image with a plain background prints best.</span>
+          <div><SubmitButton>{logo ? "Replace logo" : "Upload logo"}</SubmitButton></div>
+        </form>
+        {logo && <div className="mt-2"><ConfirmDialog title={`Remove ${c.legal_name}'s logo?`} description="Its payment vouchers will show the company code instead. The logo's history is kept." confirmLabel="Remove logo" cancelLabel="Keep it" action={removeCompanyLogo} fields={{ company: c.id }} trigger={<Button variant="outline" size="sm">Remove logo</Button>} /></div>}
+      </section>
       <section className="mt-4 border-t pt-3"><h3 className="m-0 mb-2 text-base">Status</h3>
         {c.is_active ? (
           <ConfirmDialog title={`Deactivate ${c.legal_name}?`} description="It is marked inactive. Its requests, payments, accounts, reconciliations and audit history are kept and stay readable. This is refused while it has requests waiting for approval, authenticated payments not yet paid, or a reconciliation in progress on an account it owns." confirmLabel="Deactivate" cancelLabel="Keep it active" destructive action={updateCompany} fields={fields} trigger={<Button variant="outline" size="sm">Deactivate</Button>} />
