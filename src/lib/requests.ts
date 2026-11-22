@@ -89,7 +89,15 @@ export interface RequestRow {
   scheduled_for: string | null; schedule_error: string | null; schedule_error_at: Date | null;
   /** Recurring payments: the template and occurrence it was created for, and whether its amount is an estimate still to confirm. */
   recurring_template_id: string | null; recurring_name: string | null; recurring_occurrence: string | null; amount_is_estimate: boolean; amount_confirmed_at: Date | null;
+  /** The tax snapshot recorded on the request; all null for a request from before tax configuration. total_amount is the net payment. */
+  amount_input_mode: "BEFORE_VAT" | "TOTAL" | null; entered_amount: string | null; vat_rate_id: string | null; vat_rate_name: string | null; vat_rate_percent: string | null;
+  amount_before_vat: string | null; vat_amount: string | null; gross_amount: string | null; withholding_applied: boolean | null; withholding_rate_percent: string | null;
+  withholding_threshold: string | null; withholding_amount: string | null;
 }
+/** The tax columns, as text so no amount passes through floating point. */
+export const TAX_COLUMNS = `r.amount_input_mode, r.entered_amount::text AS entered_amount, r.vat_rate_id, r.vat_rate_name, r.vat_rate_percent::text AS vat_rate_percent,
+  r.amount_before_vat::text AS amount_before_vat, r.vat_amount::text AS vat_amount, r.gross_amount::text AS gross_amount, r.withholding_applied,
+  r.withholding_rate_percent::text AS withholding_rate_percent, r.withholding_threshold::text AS withholding_threshold, r.withholding_amount::text AS withholding_amount`;
 export interface InstallmentRow { seq: number; due_date: string; amount: string }
 export interface ApprovalRow { id: string; action: string; actor_role: string; reason: string | null; occurred_at: Date; full_name: string | null }
 export interface AdjustmentRow { id: string; field: string; old_value: string | null; new_value: string | null; reason: string; occurred_at: Date; full_name: string | null }
@@ -114,7 +122,8 @@ export const loadRequest = async (tx: Tx, id: string) => {
             r.supplier_bank_detail_id, r.person_payment_detail_id, supplier_account_state(r.supplier_bank_detail_id) AS bank_number_state,
             person_account_state(r.person_payment_detail_id) AS person_number_state, account_number_state(r.debit_account_id) AS debit_number_state,
             r.scheduled_for, r.schedule_error, r.schedule_error_at,
-            r.recurring_template_id, (SELECT t.name FROM recurring_payment_templates t WHERE t.id = r.recurring_template_id) AS recurring_name, r.recurring_occurrence, r.amount_is_estimate, r.amount_confirmed_at
+            r.recurring_template_id, (SELECT t.name FROM recurring_payment_templates t WHERE t.id = r.recurring_template_id) AS recurring_name, r.recurring_occurrence, r.amount_is_estimate, r.amount_confirmed_at,
+            ${TAX_COLUMNS}
        FROM payment_requests r JOIN companies c ON c.id = r.debtor_company_id LEFT JOIN suppliers s ON s.id = r.supplier_id LEFT JOIN person_payees p ON p.id = r.person_payee_id LEFT JOIN one_time_payees ot ON ot.id = r.one_time_payee_id
        LEFT JOIN person_payment_details pd ON pd.id = r.person_payment_detail_id LEFT JOIN supplier_bank_details b ON b.id = r.supplier_bank_detail_id LEFT JOIN users u ON u.id = r.created_by
        LEFT JOIN supplier_bank_details alt ON alt.supplier_id = r.supplier_id AND alt.status = 'VERIFIED' AND alt.is_active AND alt.id IS DISTINCT FROM r.supplier_bank_detail_id
@@ -181,8 +190,9 @@ export const authenticateEffect = (current: unknown, reserved: unknown, amount: 
 ];
 
 const ACTION_LABEL: Record<string, string> = { SUBMIT: "Submitted", VERIFY: "Verified", AUTHORIZE: "Authenticated, account debited", RETURN: "Returned for correction", REJECT: "Rejected", CANCEL: "Cancelled", ADJUST: "Adjusted", INVALIDATE: "Earlier approvals cancelled" };
-const FIELD_LABEL: Record<string, string> = { total_amount: "Total", amount: "Installment amount", due_date: "Installment due date", priority: "Priority", invoice_ref: "Invoice reference", description: "Notes", supplier_id: "Supplier", supplier_bank_detail_id: "Supplier bank details", one_time_payee_id: "One-time payee details" };
-const MONEY_FIELDS = new Set(["total_amount", "amount"]);
+const FIELD_LABEL: Record<string, string> = { total_amount: "Net payment", amount: "Installment amount", entered_amount_before_vat: "Amount before VAT (entered)", entered_amount_total: "Total including VAT (entered)",
+  vat_rate: "VAT rate", withholding_applied: "Withholding tax applied", amount_before_vat: "Amount before VAT", vat_amount: "VAT", gross_amount: "Total including VAT", withholding_amount: "Withholding tax", due_date: "Installment due date", priority: "Priority", invoice_ref: "Invoice reference", description: "Notes", supplier_id: "Supplier", supplier_bank_detail_id: "Supplier bank details", one_time_payee_id: "One-time payee details" };
+const MONEY_FIELDS = new Set(["total_amount", "amount", "entered_amount_before_vat", "entered_amount_total", "amount_before_vat", "vat_amount", "gross_amount", "withholding_amount"]);
 
 export interface HistoryEntry { key: string; when: Date; who: string; role: string | null; title: string; detail: string | null; reason: string | null; tone: "default" | "warning" | "destructive" }
 

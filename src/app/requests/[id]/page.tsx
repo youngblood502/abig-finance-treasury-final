@@ -4,6 +4,9 @@ import { notFound } from "next/navigation";
 import { Flash } from "@/components";
 import { recordExecution, workflowAction, confirmRequestAmount, reauthorizeDestination, reverifyDestination, useActiveBankDetails } from "../../actions";
 import { AdjustForm } from "@/components/requests/adjust-form";
+import { TaxBreakdown } from "@/components/requests/amount-entry";
+import { loadTaxOptions } from "@/lib/tax";
+import { taxLines } from "@/lib/voucher";
 import { ReviewActions } from "@/components/requests/review-actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,7 +47,7 @@ export default async function RequestDetail({ params, searchParams }: { params: 
     const found = await loadRequest(tx, id);
     if (!found) return null;
     const enc = found.r.person_payee_id && !found.restricted ? (await tx.q<{ v: string | null }>("SELECT reveal_person_id($1) AS v", [id]))[0].v : null;   // logged; empty if this person may not see it
-    return { ...found, fullId: enc ? revealIdNumber(enc) : null };
+    return { ...found, fullId: enc ? revealIdNumber(enc) : null, tax: found.stage ? await loadTaxOptions(tx) : null };
   });
   if (!d) notFound();
   const { r } = d, mine = r.created_by === me.id;
@@ -65,6 +68,11 @@ export default async function RequestDetail({ params, searchParams }: { params: 
     <>
       <p className="mute mb-2"><Link href={d.stage ? "/approvals" : "/requests"}>{d.stage ? "Approvals" : "Payment requests"}</Link> / {r.request_no}</p>
       <PageHeader title={`${r.request_no}: ${r.payee ?? (d.restricted ? "Payee not shown" : "No payee")}`} description={`${r.company}, entered by ${r.creator_name ?? "someone at the company"}`} action={<StatusBadge state={r.workflow_state} />} />
+      <div className="mb-3 flex flex-wrap gap-2">
+        <Button asChild variant="outline" size="sm"><Link href={`/requests/${id}/print`} target="_blank" rel="noopener">Print</Link></Button>
+        <Button asChild variant="outline" size="sm"><a href={`/requests/${id}/voucher/pdf`}>Export PDF</a></Button>
+        <Button asChild variant="outline" size="sm"><a href={`/requests/${id}/voucher/xlsx`}>Export Excel</a></Button>
+      </div>
       <Flash sp={sp} />
       {stopped && (
         <div role="status" className="mb-3 rounded-xl border border-warning bg-warning-soft p-4 text-sm text-foreground">
@@ -80,7 +88,8 @@ export default async function RequestDetail({ params, searchParams }: { params: 
             <div className="mt-2">
               <SidePanel title={`Adjust ${r.request_no}`} description="Corrections made during review." trigger={<Button variant="outline">Adjust this request</Button>}>
                 <AdjustForm id={id} version={r.version} priority={r.priority} invoiceRef={r.invoice_ref ?? ""} description={r.description ?? ""} totalAmount={Number(r.total_amount)}
-                  installments={d.installments.map((i) => ({ seq: i.seq, dueDate: dstr(i.due_date), amount: Number(i.amount) }))} />
+                  installments={d.installments.map((i) => ({ seq: i.seq, dueDate: dstr(i.due_date), amount: String(i.amount) }))} vatRates={d.tax?.vat ?? []}
+                  tax={r.amount_input_mode ? { mode: r.amount_input_mode, entered: r.entered_amount!, vatRateId: r.vat_rate_id!, vatRateName: r.vat_rate_name!, vatPercent: r.vat_rate_percent!, withholding: !!r.withholding_applied, whtPercent: r.withholding_rate_percent!, whtThreshold: r.withholding_threshold } : null} />
               </SidePanel>
             </div>
           )}
@@ -147,7 +156,7 @@ export default async function RequestDetail({ params, searchParams }: { params: 
       {d.restricted && <p className="mute">With group reporting you see this request's amount, account, dates and status. Who is paid, the invoice and its documents, and who handled it show only to the company's members.</p>}
       <Card title="Details">
         <dl className="m-0 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <Fact label="Total"><b>{etb(r.total_amount)}</b>{r.amount_is_estimate && <Badge variant={r.amount_confirmed_at ? "outline" : "warning"} className="ml-2">{r.amount_confirmed_at ? "Estimate confirmed" : "Estimate"}</Badge>}</Fact>
+          <Fact label={r.amount_input_mode ? "Net payment" : "Total"}><b>{etb(r.total_amount)}</b>{r.amount_is_estimate && <Badge variant={r.amount_confirmed_at ? "outline" : "warning"} className="ml-2">{r.amount_confirmed_at ? "Estimate confirmed" : "Estimate"}</Badge>}</Fact>
           {r.recurring_occurrence && <Fact label="Recurring payment">{r.recurring_name ? <Link href="/recurring">{r.recurring_name}</Link> : "A recurring payment"}<div className="text-xs text-muted-foreground">Created for {dstr(r.recurring_occurrence)}</div></Fact>}
           {d.restricted ? null : r.supplier_id ? <Fact label="Supplier">{r.payee}{(r.tin || r.supplier_phone) && <div className="text-xs text-muted-foreground">{[r.tin && `TIN ${r.tin}`, r.supplier_phone].filter(Boolean).join(", ")}</div>}</Fact>
             : oneTime ? <Fact label="One-time payee">{r.payee} <Badge variant="outline">Not registered</Badge><div className="text-xs text-muted-foreground">{r.ot_phone ?? "No phone recorded"}. Entered on this request; no supplier or person record.</div></Fact>
@@ -164,6 +173,11 @@ export default async function RequestDetail({ params, searchParams }: { params: 
         </dl>
       </Card>
 
+      <Card title="Amount and tax">
+        {r.amount_input_mode ? <div className="max-w-md"><TaxBreakdown lines={taxLines(r)} />
+          <p className="mb-0 mt-2 text-xs text-muted-foreground">Recorded on the request ({r.amount_input_mode === "BEFORE_VAT" ? "entered as the amount before VAT" : "entered as the total including VAT"}). Later changes to the tax settings do not change it. The net payment is what is reserved and paid; VAT and withholding are recorded for reporting.</p></div>
+          : <p className="m-0 text-sm text-muted-foreground">No tax breakdown recorded: this request was created before tax configuration{r.recurring_template_id ? ", or by a recurring payment" : ""}. Its total is the amount paid.</p>}
+      </Card>
       <Card title="Installments"><DataTable caption="Installments" columns={INSTALLMENTS} rows={instRows} /></Card>
       {!d.restricted && (
         <Card title="Documents">
